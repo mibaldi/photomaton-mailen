@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#e8457a">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<title>Photomatón Mailen</title>
+<style>
+:root{--bg:#fff7fa;--fg:#2b1d24;--card:#fff;--pri:#e8457a;--pri2:#c92e62;--mut:#8a7480;--ok:#1f9d55;--bad:#d64545;--line:#f1dbe4}
+@media (prefers-color-scheme:dark){:root{--bg:#1b1417;--fg:#f7eaf0;--card:#271d22;--mut:#b49aa6;--line:#3a2b32}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:max(16px,env(safe-area-inset-top)) 16px 24px}
+main{max-width:480px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+h1{font-size:1.4rem;margin:4px 0 0;text-align:center}
+.sub{text-align:center;color:var(--mut);margin:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px}
+.estado-con{display:flex;align-items:center;gap:10px;font-weight:600}
+.dot{width:12px;height:12px;border-radius:50%;background:var(--bad);flex:none}
+.dot.on{background:var(--ok)}
+button{font:inherit;border:0;border-radius:16px;padding:16px;cursor:pointer;width:100%;font-weight:700;color:#fff;background:var(--pri);touch-action:manipulation}
+button:active{transform:scale(.98)}
+button:disabled{opacity:.4;cursor:default}
+.foto{font-size:1.6rem;padding:34px 16px;background:linear-gradient(135deg,var(--pri),var(--pri2))}
+.fila{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.sec{background:var(--card);color:var(--fg);border:2px solid var(--line)}
+.peligro{background:var(--card);color:var(--bad);border:2px solid var(--bad)}
+#log{font-size:.95rem;color:var(--mut);min-height:1.4em;text-align:center}
+dl{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:0}
+dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
+.aviso{background:#fff3cd;color:#6b4e00;border-radius:12px;padding:12px;font-size:.92rem}
+@media (prefers-color-scheme:dark){.aviso{background:#3b3010;color:#f3dc8b}}
+.oculto{display:none}
+</style>
+</head>
+<body>
+<main>
+  <h1>🎉 Photomatón Mailen</h1>
+  <p class="sub">Control por Bluetooth · funciona sin internet</p>
+
+  <div id="noble" class="aviso oculto">Este navegador no permite Bluetooth web. Abre esta página en <b>Chrome</b> para Android.</div>
+
+  <div class="card">
+    <div class="estado-con"><span id="dot" class="dot"></span><span id="con">Desconectado</span></div>
+  </div>
+
+  <button id="bConectar">🔗 Conectar al photomatón</button>
+  <button id="bFoto" class="foto" disabled>📷 Hacer foto</button>
+  <div id="log"></div>
+
+  <div class="card">
+    <dl id="estado"><dt>Estado</dt><dd>—</dd></dl>
+    <div style="height:10px"></div>
+    <button id="bEstado" class="sec" disabled>📊 Actualizar estado</button>
+  </div>
+
+  <div class="fila">
+    <button id="bReiniciar" class="sec" disabled>🔄 Reiniciar</button>
+    <button id="bApagar" class="peligro" disabled>⏻ Apagar</button>
+  </div>
+</main>
+<script>
+const SVC="a07498ca-ad5b-474e-940d-16f1fbe7e8cd", CMD="a07498ca-ad5b-474e-940d-16f1fbe7e8ce", RESP="a07498ca-ad5b-474e-940d-16f1fbe7e8cf";
+let dev=null, cmdChar=null;
+const $=id=>document.getElementById(id);
+const botones=["bFoto","bEstado","bReiniciar","bApagar"];
+const log=t=>$("log").textContent=t;
+
+if(!navigator.bluetooth){$("noble").classList.remove("oculto");$("bConectar").disabled=true}
+
+function conectadoUI(on){
+  $("dot").classList.toggle("on",on);
+  $("con").textContent=on?"Conectado a "+(dev?.name||"Photomaton"):"Desconectado";
+  botones.forEach(b=>$(b).disabled=!on);
+  $("bConectar").textContent=on?"🔌 Desconectar":"🔗 Conectar al photomatón";
+}
+
+async function conectar(){
+  if(dev?.gatt?.connected){dev.gatt.disconnect();return}
+  try{
+    if(!dev){
+      dev=await navigator.bluetooth.requestDevice({filters:[{services:[SVC]},{name:"Photomaton"}],optionalServices:[SVC]});
+      dev.addEventListener("gattserverdisconnected",()=>{conectadoUI(false);log("Conexión perdida. Pulsa Conectar.")});
+    }
+    log("Conectando…");
+    const srv=await dev.gatt.connect();
+    const s=await srv.getPrimaryService(SVC);
+    cmdChar=await s.getCharacteristic(CMD);
+    const r=await s.getCharacteristic(RESP);
+    await r.startNotifications();
+    r.addEventListener("characteristicvaluechanged",e=>respuesta(new TextDecoder().decode(e.target.value)));
+    conectadoUI(true); log("¡Listo!");
+    enviar("estado");
+  }catch(e){log("No se pudo conectar: "+e.message);conectadoUI(false)}
+}
+
+async function enviar(t){
+  try{await cmdChar.writeValue(new TextEncoder().encode(t))}catch(e){log("Error enviando: "+e.message)}
+}
+
+function respuesta(txt){
+  let d; try{d=JSON.parse(txt)}catch{log(txt);return}
+  if(d.cmd==="estado"){
+    const filas=[["App",d.app?"✅ OK":"❌ parada"],["Cámara",d.camara?"✅ OK":"❌ no detectada"],["Fotos",d.fotos],
+      ["Internet",d.internet?"✅ sí (sube a Drive)":"❌ no (se guardan)"],["Wi-Fi",d.wifi||"—"],["Temperatura",d.temp],["Alimentación",d.alim_ok?"✅ OK":"⚠️ justa"]];
+    $("estado").innerHTML=filas.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join("");
+    log("Estado actualizado");
+  }else{
+    log((d.ok?"":"⚠️ ")+(d.msg||JSON.stringify(d)));
+    if(d.cmd==="foto_hecha"){$("bFoto").disabled=false; if(navigator.vibrate)navigator.vibrate(80)}
+  }
+}
+
+$("bConectar").onclick=conectar;
+$("bFoto").onclick=()=>{$("bFoto").disabled=true;log("📷 ¡Sonreíd!");enviar("foto");setTimeout(()=>{if(dev?.gatt?.connected)$("bFoto").disabled=false},8000)};
+$("bEstado").onclick=()=>enviar("estado");
+$("bReiniciar").onclick=()=>{if(confirm("¿Reiniciar el photomatón?"))enviar("reiniciar")};
+$("bApagar").onclick=()=>{if(confirm("¿Seguro que quieres APAGAR el photomatón?"))enviar("apagar")};
+
+if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js");
+</script>
+</body>
+</html>
