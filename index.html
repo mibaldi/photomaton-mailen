@@ -36,10 +36,40 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
 #flash.on{opacity:1;transition:none}
 .opc{display:flex;align-items:center;gap:10px;font-weight:600}
 .opc input{width:22px;height:22px;accent-color:var(--pri)}
+#rejilla{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px}
+#rejilla button{padding:0;border-radius:10px;overflow:hidden;aspect-ratio:16/9;background:var(--line);position:relative}
+#rejilla img{width:100%;height:100%;object-fit:cover;display:block}
+#rejilla .cargando::after{content:"…";position:absolute;inset:0;display:grid;place-items:center;color:var(--mut);font-size:1.4rem}
+#visor{position:fixed;inset:0;background:#0d090b;display:none;flex-direction:column;z-index:50}
+#visor.on{display:flex}
+#visor .arriba{display:flex;justify-content:space-between;align-items:center;padding:max(10px,env(safe-area-inset-top)) 12px 6px;color:#eee}
+#vCerrar{background:none;width:auto;padding:6px 12px;font-size:1.8rem;line-height:1}
+#vMarco{flex:1;display:flex;align-items:center;justify-content:center;position:relative;min-height:0}
+#vImg{max-width:100%;max-height:100%;object-fit:contain}
+#vMarco .flecha{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:64px;padding:0;background:rgba(255,255,255,.14);font-size:1.6rem}
+#vAnt{left:6px}#vSig{right:6px}
+#vBarra{height:4px;background:#3a2b32;margin:0 12px;border-radius:2px;overflow:hidden}
+#vBarra div{height:100%;width:0;background:var(--pri);transition:width .15s}
+#vTexto{color:#bbb;text-align:center;font-size:.9rem;min-height:1.3em;margin:6px 12px 0}
+#visor .acciones{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px 12px max(14px,env(safe-area-inset-bottom))}
+#visor .acciones button{padding:14px 4px;background:#3a2b32;font-size:.95rem}
+#visor .acciones .pri{background:linear-gradient(135deg,var(--pri),var(--pri2))}
+#visor .acciones .seguro{background:var(--ok)}
 </style>
 </head>
 <body>
 <div id="flash"></div>
+<div id="visor" role="dialog" aria-modal="true">
+  <div class="arriba"><span id="vCont"></span><button id="vCerrar" aria-label="Cerrar">×</button></div>
+  <div id="vMarco"><img id="vImg" alt="Foto del photomatón"><button class="flecha" id="vAnt" aria-label="Anterior">‹</button><button class="flecha" id="vSig" aria-label="Siguiente">›</button></div>
+  <div id="vBarra"><div></div></div>
+  <p id="vTexto"></p>
+  <div class="acciones">
+    <button id="vCompartir" class="pri">📲 Compartir</button>
+    <button id="vGuardar">⬇️ Guardar</button>
+    <button id="vImprimir">🖨 Imprimir</button>
+  </div>
+</div>
 <main>
   <h1>🎉 Photomatón Mailen</h1>
   <p class="sub">Control por Bluetooth · funciona sin internet</p>
@@ -69,6 +99,14 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
   </div>
 
   <div class="card">
+    <div class="estado-con">🖼 Fotos de la fiesta <span id="nFotos" style="color:var(--mut);font-weight:400"></span></div>
+    <p class="sub" style="text-align:left;margin:6px 0 10px;font-size:.88rem">Llegan por Bluetooth: las miniaturas tardan un momento y cada foto grande unos segundos.</p>
+    <button id="bGaleria" disabled>🖼 Ver fotos</button>
+    <div id="rejilla"></div>
+    <div id="masBox" class="oculto" style="margin-top:10px"><button id="bMas" class="sec">Cargar más</button></div>
+  </div>
+
+  <div class="card oculto" id="cardPanel">
     <div class="estado-con">📱 Panel de fotos: <span id="wifiEstado" style="font-weight:600">—</span></div>
     <p class="sub" style="text-align:left;margin:8px 0 10px;font-size:.88rem">Los invitados se conectan a la Wi-Fi del photomatón y abren <b>http://10.42.0.1</b> para ver, guardar, mandar por WhatsApp o imprimir sus fotos.</p>
     <button id="bWifi" class="sec" disabled>📶 Encender Wi-Fi de la fiesta</button>
@@ -88,10 +126,10 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
   <p class="sub" style="font-size:.85rem"><a href="https://github.com/mibaldi/photomaton-mailen/tree/main/raspberry" style="color:var(--mut)">📘 Guía de montaje de la Raspberry Pi</a></p>
 </main>
 <script>
-const SVC="a07498ca-ad5b-474e-940d-16f1fbe7e8cd", CMD="a07498ca-ad5b-474e-940d-16f1fbe7e8ce", RESP="a07498ca-ad5b-474e-940d-16f1fbe7e8cf";
+const SVC="a07498ca-ad5b-474e-940d-16f1fbe7e8cd", CMD="a07498ca-ad5b-474e-940d-16f1fbe7e8ce", RESP="a07498ca-ad5b-474e-940d-16f1fbe7e8cf", DATA="a07498ca-ad5b-474e-940d-16f1fbe7e8d0";
 let dev=null, cmdChar=null;
 const $=id=>document.getElementById(id);
-const botones=["bFoto","bEstado","bReiniciar","bApagar","bImprimir","cAuto","bWifi","cInvitados"];
+const botones=["bFoto","bEstado","bReiniciar","bApagar","bImprimir","cAuto","bWifi","cInvitados","bGaleria"];
 const log=t=>$("log").textContent=t;
 
 if(!navigator.bluetooth){$("noble").classList.remove("oculto");$("bConectar").disabled=true}
@@ -110,7 +148,7 @@ async function conectar(){
   try{
     if(!dev){
       dev=await navigator.bluetooth.requestDevice({filters:[{services:[SVC]},{name:"Photomaton"}],optionalServices:[SVC]});
-      dev.addEventListener("gattserverdisconnected",()=>{conectadoUI(false);log("Conexión perdida. Pulsa Conectar.")});
+      dev.addEventListener("gattserverdisconnected",()=>{conectadoUI(false);abortarDatos();log("Conexión perdida. Pulsa Conectar.")});
     }
     log("Conectando…");
     const srv=await dev.gatt.connect();
@@ -119,6 +157,10 @@ async function conectar(){
     const r=await s.getCharacteristic(RESP);
     await r.startNotifications();
     r.addEventListener("characteristicvaluechanged",e=>respuesta(new TextDecoder().decode(e.target.value)));
+    try{
+      const dch=await s.getCharacteristic(DATA); await dch.startNotifications();
+      dch.addEventListener("characteristicvaluechanged",e=>trozoRecibido(e.target.value));
+    }catch(e){console.warn("Sin canal de datos (servidor antiguo)",e)}
     conectadoUI(true); log("¡Listo!");
     enviar("estado");
   }catch(e){log("No se pudo conectar: "+e.message);conectadoUI(false)}
@@ -131,6 +173,8 @@ async function enviar(t){
 function respuesta(txt){
   let d; try{d=JSON.parse(txt)}catch{log(txt);return}
   if(d.cmd==="click"){efectoFoto();return}
+  if(d.cmd==="datos"){cabeceraDatos(d);return}
+  if(d.cmd==="imprimir" && $("visor").classList.contains("on")) $("vTexto").textContent=d.msg;
   if("impresora" in d){
     $("impEstado").textContent=d.impresora+(d.impresas!==undefined?` · ${d.impresas}${d.limite?"/"+d.limite:""} impresas`:"");
     $("cAuto").checked=!!d.auto_print;
@@ -148,7 +192,7 @@ function respuesta(txt){
     log("Estado actualizado");
   }else{
     log((d.ok?"":"⚠️ ")+(d.msg||JSON.stringify(d)));
-    if(d.cmd==="foto_hecha"){$("bFoto").disabled=false; if(navigator.vibrate)navigator.vibrate(80)}
+    if(d.cmd==="foto_hecha"){$("bFoto").disabled=false; if(navigator.vibrate)navigator.vibrate(80); if(galeriaAbierta) setTimeout(cargarLista,1500)}
   }
 }
 
@@ -190,6 +234,139 @@ $("cInvitados").onchange=()=>enviar($("cInvitados").checked?"invitados_on":"invi
 $("cAuto").onchange=()=>enviar($("cAuto").checked?"auto_on":"auto_off");
 $("bReiniciar").onclick=()=>{if(confirm("¿Reiniciar el photomatón?"))enviar("reiniciar")};
 $("bApagar").onclick=()=>{if(confirm("¿Seguro que quieres APAGAR el photomatón?"))enviar("apagar")};
+
+// ---------- Galería por Bluetooth ----------
+// Cada petición (lista / mini / ver) devuelve una cabecera por RESP y los bytes en trozos por DATA.
+// Las peticiones van de una en una; si faltan trozos se piden otra vez.
+const colaDatos=[]; let actualDatos=null;
+const minis=new Map(), grandes=new Map();
+let fotos=[], mostradas=0, galeriaAbierta=false, vIdx=-1, confirmarImp=null;
+const POR_TANDA=18;
+
+function abortarDatos(){
+  const err=new Error("desconectado");
+  if(actualDatos){clearTimeout(actualDatos._t);actualDatos.ko(err);actualDatos=null}
+  colaDatos.splice(0).forEach(p=>p.ko(err));
+}
+function pedirDatos(orden, urgente=false){
+  return new Promise((ok,ko)=>{
+    const p={orden,ok,ko,intentos:0};
+    urgente?colaDatos.unshift(p):colaDatos.push(p);
+    siguienteDatos();
+  });
+}
+function siguienteDatos(){
+  if(actualDatos||!colaDatos.length||!dev?.gatt?.connected) return;
+  actualDatos=colaDatos.shift(); actualDatos.cab=null;
+  enviar(actualDatos.orden); vigilar(8000);
+}
+function vigilar(ms){clearTimeout(actualDatos?._t); if(actualDatos) actualDatos._t=setTimeout(revisar,ms)}
+function cabeceraDatos(d){
+  const a=actualDatos; if(!a) return;
+  if(!d.ok){clearTimeout(a._t);actualDatos=null;a.ko(new Error(d.msg||"error"));siguienteDatos();return}
+  a.cab=d; a.buf=new Uint8Array(d.tam); a.tengo=new Uint8Array(d.n); a.cuantos=0; vigilar(3000);
+  progreso(a);
+}
+function trozoRecibido(dv){
+  const a=actualDatos; if(!a||!a.cab) return;
+  const i=(dv.getUint8(0)<<8)|dv.getUint8(1);
+  if(i>=a.cab.n||a.tengo[i]) return;
+  a.buf.set(new Uint8Array(dv.buffer,dv.byteOffset+2,dv.byteLength-2),i*a.cab.trozo);
+  a.tengo[i]=1; a.cuantos++; progreso(a);
+  if(a.cuantos===a.cab.n){clearTimeout(a._t);actualDatos=null;a.ok({tipo:a.cab.tipo,id:a.cab.id,bytes:a.buf});siguienteDatos()}
+  else vigilar(1500);
+}
+function revisar(){
+  const a=actualDatos; if(!a) return;
+  if(++a.intentos>4){actualDatos=null;a.ko(new Error("No llegan los datos"));siguienteDatos();return}
+  if(!a.cab){enviar(a.orden);vigilar(8000);return}
+  const faltan=[]; for(let i=0;i<a.cab.n&&faltan.length<60;i++) if(!a.tengo[i]) faltan.push(i);
+  enviar(`trozos ${a.cab.tipo} ${a.cab.id} ${faltan.join(",")}`); vigilar(3000);
+}
+function progreso(a){
+  if(a.cab?.tipo==="foto" && grandesPendiente===a.cab.id){
+    const pc=Math.round(100*a.cuantos/a.cab.n); $("vBarra").firstChild.style.width=pc+"%";
+    $("vTexto").textContent=pc<100?`Recibiendo la foto por Bluetooth… ${pc}%`:"";
+  }
+}
+
+async function cargarLista(){
+  try{
+    const r=await pedirDatos("lista",true);
+    const nuevas=JSON.parse(new TextDecoder().decode(r.bytes)).fotos;
+    const habia=fotos.length; fotos=nuevas;
+    $("nFotos").textContent=`· ${fotos.length}`;
+    if(!habia){mostradas=0;$("rejilla").innerHTML="";mostrarMas()}
+    else pintarRejilla(Math.max(mostradas,Math.min(fotos.length,mostradas+(fotos.length-habia))));
+    if(!fotos.length) $("rejilla").innerHTML='<p class="sub" style="grid-column:1/-1">Todavía no hay fotos</p>';
+  }catch(e){log("⚠️ No se pudo cargar la lista: "+e.message)}
+}
+function pintarRejilla(hasta){
+  mostradas=hasta;
+  $("rejilla").innerHTML=fotos.slice(0,mostradas).map((n,i)=>`<button data-i="${i}" class="${minis.has(n)?"":"cargando"}">${minis.has(n)?`<img src="${minis.get(n)}" alt="">`:""}</button>`).join("");
+  $("masBox").classList.toggle("oculto",mostradas>=fotos.length);
+  fotos.slice(0,mostradas).forEach(n=>{if(!minis.has(n)) pedirMini(n)});
+}
+function mostrarMas(){pintarRejilla(Math.min(fotos.length,mostradas+POR_TANDA))}
+const pidiendoMini=new Set();
+async function pedirMini(n){
+  if(pidiendoMini.has(n)) return; pidiendoMini.add(n);
+  try{
+    const r=await pedirDatos("mini "+n);
+    minis.set(n,URL.createObjectURL(new Blob([r.bytes],{type:"image/jpeg"})));
+    const b=$("rejilla").querySelector(`[data-i="${fotos.indexOf(n)}"]`);
+    if(b){b.classList.remove("cargando");b.innerHTML=`<img src="${minis.get(n)}" alt="">`}
+    if(fotos[vIdx]===n && !grandes.has(n)) $("vImg").src=minis.get(n);
+  }catch{}finally{pidiendoMini.delete(n)}
+}
+$("bGaleria").onclick=()=>{galeriaAbierta=true;$("bGaleria").textContent="🔄 Actualizar fotos";cargarLista()};
+$("bMas").onclick=mostrarMas;
+$("rejilla").onclick=e=>{const b=e.target.closest("button[data-i]");if(b)abrirFoto(+b.dataset.i)};
+
+let grandesPendiente=null;
+async function abrirFoto(i){
+  if(i<0||i>=fotos.length) return;
+  vIdx=i; const n=fotos[i];
+  $("vCont").textContent=`Foto ${fotos.length-i} de ${fotos.length}`;
+  $("vAnt").style.visibility=i>0?"":"hidden"; $("vSig").style.visibility=i<fotos.length-1?"":"hidden";
+  resetImp(); $("vTexto").textContent="";
+  if(!$("visor").classList.contains("on")){$("visor").classList.add("on");history.pushState({visor:1},"")}
+  if(grandes.has(n)){$("vImg").src=grandes.get(n).url;$("vBarra").firstChild.style.width="100%";botonesVisor(true);return}
+  $("vImg").src=minis.get(n)||""; $("vBarra").firstChild.style.width="0"; botonesVisor(false);
+  grandesPendiente=n; $("vTexto").textContent="Pidiendo la foto…";
+  try{
+    const r=await pedirDatos("ver "+n,true);
+    const blob=new Blob([r.bytes],{type:"image/jpeg"});
+    grandes.set(n,{blob,url:URL.createObjectURL(blob)});
+    if(fotos[vIdx]===n){$("vImg").src=grandes.get(n).url;$("vTexto").textContent="";botonesVisor(true)}
+  }catch(e){if(fotos[vIdx]===n)$("vTexto").textContent="⚠️ No se pudo recibir: "+e.message}
+}
+function botonesVisor(on){$("vCompartir").disabled=!on;$("vGuardar").disabled=!on}
+function cerrarVisor(){$("visor").classList.remove("on");resetImp();grandesPendiente=null}
+$("vCerrar").onclick=()=>history.back();
+addEventListener("popstate",cerrarVisor);
+$("vAnt").onclick=()=>abrirFoto(vIdx-1); $("vSig").onclick=()=>abrirFoto(vIdx+1);
+let x0=null; $("vMarco").addEventListener("touchstart",e=>x0=e.touches[0].clientX,{passive:true});
+$("vMarco").addEventListener("touchend",e=>{if(x0===null)return;const dx=e.changedTouches[0].clientX-x0;x0=null;if(Math.abs(dx)>50)abrirFoto(vIdx+(dx<0?1:-1))});
+
+$("vCompartir").onclick=async()=>{
+  const n=fotos[vIdx], g=grandes.get(n); if(!g) return;
+  const f=new File([g.blob],"photomaton-mailen-"+n,{type:"image/jpeg"});
+  try{
+    if(navigator.canShare?.({files:[f]})) await navigator.share({files:[f],title:"Cumple de Mailen"});
+    else{$("vTexto").textContent="Este navegador no deja compartir: pulsa Guardar y mándala desde la galería"}
+  }catch(e){if(e.name!=="AbortError")$("vTexto").textContent="⚠️ "+e.message}
+};
+$("vGuardar").onclick=()=>{
+  const n=fotos[vIdx], g=grandes.get(n); if(!g) return;
+  const a=document.createElement("a"); a.href=g.url; a.download="photomaton-mailen-"+n; document.body.appendChild(a); a.click(); a.remove();
+  $("vTexto").textContent="⬇️ Guardada en Descargas";
+};
+function resetImp(){clearTimeout(confirmarImp);confirmarImp=null;$("vImprimir").textContent="🖨 Imprimir";$("vImprimir").classList.remove("seguro")}
+$("vImprimir").onclick=()=>{
+  if(!confirmarImp){$("vImprimir").textContent="¿Seguro? Toca otra vez";$("vImprimir").classList.add("seguro");confirmarImp=setTimeout(resetImp,4000);return}
+  resetImp(); $("vTexto").textContent="🖨 Enviando a la impresora…"; enviar("imprimir "+fotos[vIdx]);
+};
 
 if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js");
 </script>

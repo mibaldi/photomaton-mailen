@@ -18,7 +18,7 @@ Todos los ficheros mencionados están en esta carpeta (`raspberry/`). Los de imp
 10. [Apagar de forma segura](#10-apagar-de-forma-segura)
 11. [Extras con internet: bot de Telegram y subida a Google Drive](#11-extras-con-internet)
 12. [Impresora Canon SELPHY CP1500](#12-impresora-canon-selphy-cp1500)
-13. [Panel de fotos para los invitados](#13-panel-de-fotos-para-los-invitados)
+13. [Ver, compartir e imprimir las fotos desde el móvil](#13-ver-compartir-e-imprimir-las-fotos-desde-el-móvil)
 14. [Comprobaciones y problemas conocidos](#14-comprobaciones-y-problemas-conocidos)
 
 En esta guía el usuario de la Pi se llama `admin`. Si usas otro, cambia `/home/admin` y `admin` en los ficheros.
@@ -308,7 +308,21 @@ Cómo se imprime:
 - Registro en `~/photobooth-data/log/impresion.log`.
 - **Una foto cada vez**: CUPS da el trabajo por terminado al enviar los datos, pero la SELPHY sigue imprimiendo ~1 min. Si le llega otra foto en ese rato, el driver se cuelga. `imprimir-foto.sh` encola en segundo plano, espera 60 s entre fotos y, si una se atasca más de 150 s, la cancela, reinicia CUPS y la reintenta.
 
-## 13. Panel de fotos para los invitados
+## 13. Ver, compartir e imprimir las fotos desde el móvil
+
+### Galería por Bluetooth (la opción principal)
+
+En la webapp, **"🖼 Ver fotos"** muestra todas las fotos de la fiesta sin internet ni Wi-Fi: llegan por el mismo Bluetooth que el resto de órdenes. Al tocar una se abre en grande con **Compartir** (menú del móvil → WhatsApp, funciona porque la webapp va por https), **Guardar** e **Imprimir** (esa foto en concreto, con doble toque para confirmar).
+
+Cómo funciona (`ble/photomaton-ble.py`):
+
+- Tercera característica `…e8d0` (DATA, notify) para los bytes.
+- Órdenes `lista`, `mini <foto>` (320 px, ~10 KB), `ver <foto>` (1280 px, ~120 KB) e `imprimir <foto>`. La Pi responde por RESP con una cabecera `{"cmd":"datos","tipo","id","tam","trozo","n"}` y manda la imagen en trozos `[2 bytes de número][datos]` del tamaño de la MTU (en Android, 512 bytes).
+- La webapp hace las peticiones de una en una, junta los trozos y, si falta alguno, lo vuelve a pedir con `trozos <tipo> <foto> <n,n,…>`.
+- Las reducciones se generan con el Python de photobooth-app (Pillow) y se guardan en `~/photobooth-data/ble-cache`. Las fotos de prueba de `excluir_pruebas.txt` no salen.
+- Si va lento o se pierden trozos, ajusta `PAUSA_TROZO` en el servidor.
+
+### Panel por Wi-Fi para los invitados (opcional)
 
 Los invitados se conectan a una **Wi-Fi que emite la propia Pi** (sin internet) y abren **http://10.42.0.1**: ven todas las fotos, las guardan, las mandan por WhatsApp o las imprimen. Funciona en Android y en iPhone, sin instalar nada.
 

@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """Servidor BLE (GATT) del photomatón: recibe órdenes de texto desde la webapp (Web Bluetooth).
 Órdenes: foto | estado | imprimir | auto_on | auto_off | invitados_on | invitados_off | wifi_fiesta_on | wifi_fiesta_off |
-apagar | reiniciar | ping. Responde por notificación en la característica RESP.
+apagar | reiniciar | ping.
+Galería por BLE: lista | mini <foto> | ver <foto> | trozos <tipo> <foto> <n,n,…> | imprimir <foto>.
+  La cabecera {"cmd":"datos",tipo,id,tam,trozo,n} va por RESP y los bytes por la característica DATA,
+  en trozos de [2 bytes de número de trozo][datos]. La webapp junta los trozos y pide los que falten. Responde por notificación en la característica RESP.
 Se ejecuta como servicio de sistema (root)."""
-import glob, json, os, socket, subprocess, threading, urllib.request
+import fnmatch, glob, json, os, re, socket, subprocess, threading, time, urllib.request
 import dbus, dbus.exceptions, dbus.mainloop.glib, dbus.service
 from gi.repository import GLib
 
 SVC_UUID = "a07498ca-ad5b-474e-940d-16f1fbe7e8cd"
 CMD_UUID = "a07498ca-ad5b-474e-940d-16f1fbe7e8ce"
 RESP_UUID = "a07498ca-ad5b-474e-940d-16f1fbe7e8cf"
+DATA_UUID = "a07498ca-ad5b-474e-940d-16f1fbe7e8d0"
 NOMBRE = "Photomaton"
 FOTOS = "/home/admin/photobooth-data/media/processed_full"
 APP = "http://localhost:8000"
@@ -77,6 +81,50 @@ def wifi_fiesta():
     return "wifi-fiesta" in sh("nmcli -t -f NAME con show --active").splitlines()
 
 
+# ---------- Galería por BLE ----------
+CACHE = "/home/admin/photobooth-data/ble-cache"
+EXCLUIR = "/home/admin/.config/rclone/excluir_pruebas.txt"     # las fotos de prueba no salen
+PY_FOTOS = "/home/admin/.local/share/pipx/venvs/photobooth-app/bin/python"   # trae Pillow
+NOMBRE_OK = re.compile(r"^[\w.-]+\.jpg$")
+TAMANOS = {"mini": (320, 65), "foto": (1280, 80)}   # lado mayor, calidad JPEG
+PAUSA_TROZO = 0.008                                 # s entre notificaciones (no saturar D-Bus/BlueZ)
+REDUCIR = """import sys
+from PIL import Image
+src, dst, lado, q = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+im = Image.open(src); im.thumbnail((lado, lado)); im.convert("RGB").save(dst, "JPEG", quality=q, optimize=True)
+"""
+
+
+def lista_fotos():
+    try:
+        excl = [l.strip().lstrip("/") for l in open(EXCLUIR) if l.strip() and not l.startswith("#")]
+    except OSError:
+        excl = []
+    fotos = [(os.path.getmtime(f), os.path.basename(f)) for f in glob.glob(os.path.join(FOTOS, "*.jpg"))]
+    return [n for _, n in sorted(fotos, reverse=True) if NOMBRE_OK.match(n) and not any(fnmatch.fnmatch(n, p) for p in excl)]
+
+
+def ruta_foto(nombre):
+    r = os.path.join(FOTOS, nombre or "")
+    return r if NOMBRE_OK.match(nombre or "") and os.path.isfile(r) else None
+
+
+def foto_reducida(nombre, tipo):
+    """Devuelve los bytes de la foto reducida (se guarda en caché)."""
+    src = ruta_foto(nombre)
+    if not src:
+        return None
+    os.makedirs(CACHE, exist_ok=True)
+    dst = os.path.join(CACHE, f"{tipo}-{nombre}")
+    if not os.path.exists(dst) or os.path.getmtime(dst) < os.path.getmtime(src):
+        lado, q = TAMANOS[tipo]
+        r = subprocess.run([PY_FOTOS, "-c", REDUCIR, src, dst + ".tmp", str(lado), str(q)], capture_output=True, timeout=30)
+        if r.returncode != 0:
+            return open(src, "rb").read() if tipo == "foto" else None
+        os.replace(dst + ".tmp", dst)
+    return open(dst, "rb").read()
+
+
 def como_admin(*args):
     """Ejecuta como el usuario admin (el servicio BLE corre como root)."""
     try:
@@ -140,6 +188,7 @@ class Characteristic(dbus.service.Object):
         self.service, self.uuid, self.flags = service, uuid, flags
         self.value = []
         self.notifying = False
+        self.mtu = 0
         super().__init__(bus, self.path)
 
     def props(self):
@@ -161,6 +210,8 @@ class Characteristic(dbus.service.Object):
 
     @dbus.service.method("org.bluez.GattCharacteristic1", in_signature="aya{sv}")
     def WriteValue(self, value, options):
+        if "mtu" in options:
+            self.mtu = int(options["mtu"])
         self.on_write(bytes(value).decode("utf-8", "ignore").strip().lower())
 
     @dbus.service.method("org.bluez.GattCharacteristic1")
@@ -181,6 +232,11 @@ class Characteristic(dbus.service.Object):
             self.PropertiesChanged("org.bluez.GattCharacteristic1",
                                    {"Value": dbus.Array(self.value, signature="y")}, [])
 
+    def notify_raw(self, data):
+        if self.notifying:
+            self.PropertiesChanged("org.bluez.GattCharacteristic1",
+                                   {"Value": dbus.ByteArray(data)}, [])
+
 
 def main():
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
@@ -192,14 +248,66 @@ def main():
     svc = Service(bus, 0)
     resp = Characteristic(bus, 1, svc, RESP_UUID, ["read", "notify"])
     cmd = Characteristic(bus, 0, svc, CMD_UUID, ["write", "write-without-response"])
-    svc.chars = [cmd, resp]
+    datos = Characteristic(bus, 2, svc, DATA_UUID, ["notify"])
+    svc.chars = [cmd, resp, datos]
+    envio = threading.Lock()
+    ultimo = {}          # último envío, para reenviar trozos perdidos
     app.services = [svc]
 
     def responder(obj):
         GLib.idle_add(lambda: (resp.notify(obj), False)[1])
 
+    def trozo_max():
+        # La webapp en Android negocia MTU 517; BlueZ nos la pasa en cada escritura. 3 bytes de ATT + 2 de número.
+        return max(18, min((cmd.mtu or 185) - 5, 509))
+
+    def emitir(i, trozo, data):
+        GLib.idle_add(lambda b=bytes([i >> 8, i & 255]) + data[i * trozo:(i + 1) * trozo]: (datos.notify_raw(b), False)[1])
+
+    def enviar_datos(tipo, ident, data, solo=None):
+        with envio:
+            if solo is None:
+                trozo = trozo_max()
+                n = (len(data) + trozo - 1) // trozo
+                ultimo.update(tipo=tipo, id=ident, data=data, trozo=trozo)
+                responder({"ok": True, "cmd": "datos", "tipo": tipo, "id": ident, "tam": len(data), "trozo": trozo, "n": n})
+                time.sleep(0.05)
+                indices = range(n)
+            else:
+                trozo, indices = ultimo["trozo"], solo
+            for i in indices:
+                emitir(i, trozo, data)
+                time.sleep(PAUSA_TROZO)
+
+    def galeria(txt):
+        partes = txt.split()
+        orden = partes[0]
+        if orden == "lista":
+            enviar_datos("lista", "lista", json.dumps({"fotos": lista_fotos()}).encode())
+        elif orden in ("mini", "ver") and len(partes) == 2:
+            tipo = "mini" if orden == "mini" else "foto"
+            data = foto_reducida(partes[1], tipo)
+            if data is None:
+                responder({"ok": False, "cmd": "datos", "tipo": tipo, "id": partes[1], "msg": "Esa foto no existe"})
+            else:
+                enviar_datos(tipo, partes[1], data)
+        elif orden == "trozos" and len(partes) == 4:
+            if ultimo.get("tipo") == partes[1] and ultimo.get("id") == partes[2]:
+                n = (len(ultimo["data"]) + ultimo["trozo"] - 1) // ultimo["trozo"]
+                faltan = [int(x) for x in partes[3].split(",") if x.isdigit() and int(x) < n]
+                enviar_datos(partes[1], partes[2], ultimo["data"], solo=faltan)
+        elif orden == "imprimir" and len(partes) == 2:
+            ruta = ruta_foto(partes[1])
+            if not ruta:
+                responder({"ok": False, "cmd": "imprimir", "msg": "⚠️ Esa foto no existe"})
+                return
+            rc, out = como_admin("/home/admin/bin/imprimir-foto.sh", ruta)
+            responder({"ok": rc == 0, "cmd": "imprimir", "msg": ("🖨 " if rc == 0 else "⚠️ ") + (out.replace("OK ", "") or "sin respuesta"), **estado_impresora()})
+
     def ejecutar(txt):
-        if txt == "foto":
+        if txt.split(" ", 1)[0] in ("lista", "mini", "ver", "trozos") or txt.startswith("imprimir "):
+            galeria(txt)
+        elif txt == "foto":
             antes = n_fotos()
             try:
                 urllib.request.urlopen(APP + "/api/actions/image/0", timeout=10).read()
