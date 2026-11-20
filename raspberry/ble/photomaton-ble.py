@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Servidor BLE (GATT) del photomatón: recibe órdenes de texto desde la webapp (Web Bluetooth).
-Órdenes: foto | estado | apagar | reiniciar | ping. Responde por notificación en la característica RESP.
+Órdenes: foto | estado | imprimir | auto_on | auto_off | apagar | reiniciar | ping. Responde por notificación en la característica RESP.
 Se ejecuta como servicio de sistema (root)."""
 import glob, json, os, socket, subprocess, threading, urllib.request
 import dbus, dbus.exceptions, dbus.mainloop.glib, dbus.service
@@ -47,7 +47,36 @@ def estado():
         "wifi": sh("nmcli -t -f active,ssid dev wifi | grep ^yes | cut -d: -f2") or None,
         "internet": sh("ping -c1 -W2 8.8.8.8 >/dev/null 2>&1 && echo si") == "si",
         "pendientes_drive": None,
+        **estado_impresora(),
     }
+
+
+IMPR_CFG = "/home/admin/.config/photomaton-impresion"
+
+
+def estado_impresora():
+    lp = sh("lpstat -p SELPHY 2>/dev/null")
+    def leer(n, d="0"):
+        try:
+            return open(os.path.join(IMPR_CFG, n)).read().strip() or d
+        except OSError:
+            return d
+    return {
+        "impresora": ("lista" if "idle" in lp or "inactiva" in lp else "imprimiendo" if "printing" in lp or "imprimiendo" in lp
+                      else "pausada/error" if lp else "no configurada"),
+        "auto_print": os.path.exists(os.path.join(IMPR_CFG, "auto")),
+        "impresas": int(leer("contador")),
+        "limite": int(leer("limite")),
+    }
+
+
+def como_admin(*args):
+    """Ejecuta como el usuario admin (el servicio BLE corre como root)."""
+    try:
+        r = subprocess.run(["runuser", "-u", "admin", "--", *args], capture_output=True, text=True, timeout=30)
+        return r.returncode, (r.stdout + r.stderr).strip()
+    except Exception as e:
+        return 1, str(e)
 
 
 class Advertisement(dbus.service.Object):
@@ -185,6 +214,13 @@ def main():
         elif txt == "reiniciar":
             responder({"ok": True, "cmd": "reiniciar", "msg": "Reiniciando… vuelve en 1-2 min"})
             threading.Timer(2, lambda: subprocess.Popen(["systemctl", "reboot"])).start()
+        elif txt == "imprimir":
+            rc, out = como_admin("/home/admin/bin/imprimir-foto.sh")
+            responder({"ok": rc == 0, "cmd": "imprimir", "msg": ("🖨 " if rc == 0 else "⚠️ ") + (out.replace("OK ", "") or "sin respuesta"), **estado_impresora()})
+        elif txt in ("auto_on", "auto_off"):
+            como_admin("mkdir", "-p", IMPR_CFG)
+            como_admin("touch" if txt == "auto_on" else "rm", "-f" if txt == "auto_off" else "--", os.path.join(IMPR_CFG, "auto"))
+            responder({"ok": True, "cmd": "auto", "msg": "Impresión automática " + ("activada" if txt == "auto_on" else "desactivada"), **estado_impresora()})
         elif txt == "ping":
             responder({"ok": True, "cmd": "ping", "msg": "pong"})
         else:

@@ -61,6 +61,14 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
   </div>
 
   <div class="card">
+    <div class="estado-con">🖨 Impresora: <span id="impEstado" style="font-weight:600">—</span></div>
+    <div style="height:10px"></div>
+    <button id="bImprimir" disabled>🖨 Imprimir última foto</button>
+    <div style="height:12px"></div>
+    <label class="opc"><input type="checkbox" id="cAuto" disabled> Imprimir automáticamente cada foto</label>
+  </div>
+
+  <div class="card">
     <label class="opc"><input type="checkbox" id="cEfectos" checked> 🔊 Sonido y flash en este móvil al hacer cada foto</label>
     <p class="sub" style="text-align:left;margin-top:8px;font-size:.88rem">Deja esta página abierta y con la pantalla encendida; suena con el volumen del móvil.</p>
   </div>
@@ -75,7 +83,7 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
 const SVC="a07498ca-ad5b-474e-940d-16f1fbe7e8cd", CMD="a07498ca-ad5b-474e-940d-16f1fbe7e8ce", RESP="a07498ca-ad5b-474e-940d-16f1fbe7e8cf";
 let dev=null, cmdChar=null;
 const $=id=>document.getElementById(id);
-const botones=["bFoto","bEstado","bReiniciar","bApagar"];
+const botones=["bFoto","bEstado","bReiniciar","bApagar","bImprimir","cAuto"];
 const log=t=>$("log").textContent=t;
 
 if(!navigator.bluetooth){$("noble").classList.remove("oculto");$("bConectar").disabled=true}
@@ -115,6 +123,10 @@ async function enviar(t){
 function respuesta(txt){
   let d; try{d=JSON.parse(txt)}catch{log(txt);return}
   if(d.cmd==="click"){efectoFoto();return}
+  if("impresora" in d){
+    $("impEstado").textContent=d.impresora+(d.impresas!==undefined?` · ${d.impresas}${d.limite?"/"+d.limite:""} impresas`:"");
+    $("cAuto").checked=!!d.auto_print;
+  }
   if(d.cmd==="estado"){
     const filas=[["App",d.app?"✅ OK":"❌ parada"],["Cámara",d.camara?"✅ OK":"❌ no detectada"],["Fotos",d.fotos],
       ["Internet",d.internet?"✅ sí (sube a Drive)":"❌ no (se guardan)"],["Wi-Fi",d.wifi||"—"],["Temperatura",d.temp],["Alimentación",d.alim_ok?"✅ OK":"⚠️ justa"]];
@@ -157,6 +169,8 @@ document.addEventListener("pointerdown",desbloquearAudio);
 $("bConectar").onclick=conectar;
 $("bFoto").onclick=()=>{$("bFoto").disabled=true;log("📷 ¡Sonreíd!");enviar("foto");setTimeout(()=>{if(dev?.gatt?.connected)$("bFoto").disabled=false},8000)};
 $("bEstado").onclick=()=>enviar("estado");
+$("bImprimir").onclick=()=>{$("bImprimir").disabled=true;log("🖨 Enviando a la impresora…");enviar("imprimir");setTimeout(()=>{if(dev?.gatt?.connected)$("bImprimir").disabled=false},5000)};
+$("cAuto").onchange=()=>enviar($("cAuto").checked?"auto_on":"auto_off");
 $("bReiniciar").onclick=()=>{if(confirm("¿Reiniciar el photomatón?"))enviar("reiniciar")};
 $("bApagar").onclick=()=>{if(confirm("¿Seguro que quieres APAGAR el photomatón?"))enviar("apagar")};
 

@@ -17,7 +17,8 @@ Todos los ficheros mencionados están en esta carpeta (`raspberry/`). Los de imp
 9. [Flash y sonido al hacer la foto](#9-flash-y-sonido-al-hacer-la-foto)
 10. [Apagar de forma segura](#10-apagar-de-forma-segura)
 11. [Extras con internet: bot de Telegram y subida a Google Drive](#11-extras-con-internet)
-12. [Comprobaciones y problemas conocidos](#12-comprobaciones-y-problemas-conocidos)
+12. [Impresora Canon SELPHY CP1500](#12-impresora-canon-selphy-cp1500)
+13. [Comprobaciones y problemas conocidos](#13-comprobaciones-y-problemas-conocidos)
 
 En esta guía el usuario de la Pi se llama `admin`. Si usas otro, cambia `/home/admin` y `admin` en los ficheros.
 
@@ -279,7 +280,33 @@ systemctl --user daemon-reload && systemctl --user enable --now photobooth-drive
 
 Sin internet simplemente falla y lo vuelve a intentar: cuando haya conexión sube todo lo pendiente.
 
-## 12. Comprobaciones y problemas conocidos
+## 12. Impresora Canon SELPHY CP1500
+
+Conectada por USB (cable USB-A a USB-C de datos; **no viene en la caja**). Imprime en tamaño postal sin internet.
+
+```bash
+sudo apt install -y cups printer-driver-gutenprint
+sudo usermod -aG lpadmin admin
+# ipp-usb se queda con la impresora y no funciona con la CP1500 ("Device initialization timed out")
+sudo systemctl stop ipp-usb && sudo systemctl mask ipp-usb
+sudo modprobe -r usblp && sudo modprobe usblp
+U=$(sudo lpinfo -v | grep -o "usb://Canon/[^ ]*" | head -1)
+# gutenprint 5.3.4 (Debian) no trae la CP1500: se usa el driver de la CP1300, casi idéntica
+sudo lpadmin -p SELPHY -E -v "$U" -m gutenprint.5.3://canon-cp1300/expert -o PageSize=Postcard
+sudo lpadmin -d SELPHY
+cp bin/imprimir-foto.sh ~/bin/ && chmod +x ~/bin/imprimir-foto.sh
+```
+
+La versión actual de gutenprint en desarrollo ya incluye la CP1500 (`canon-cp1500`). Si el driver de la CP1300 da problemas, compílala desde [el código fuente](https://sourceforge.net/p/gimp-print/source/).
+
+Cómo se imprime:
+
+- **Botón "🖨 Imprimir última foto"** en la webapp (orden BLE `imprimir`).
+- **Impresión automática**: casilla en la webapp (órdenes `auto_on` / `auto_off`). El plugin commander ejecuta `imprimir-foto.sh auto` al terminar cada foto, que solo imprime si existe `~/.config/photomaton-impresion/auto`.
+- **Límite de copias** (para que no se acabe el papel): `echo 54 > ~/.config/photomaton-impresion/limite`. El contador está en `~/.config/photomaton-impresion/contador` (bórralo para empezar de cero).
+- Registro en `~/photobooth-data/log/impresion.log`.
+
+## 13. Comprobaciones y problemas conocidos
 
 ```bash
 systemctl --user is-active photobooth-app mandos-foto photomaton-bot photobooth-drive.timer
@@ -296,4 +323,5 @@ tail -f ~/photobooth-data/log/photobooth_*.log
 | La webapp no encuentra "Photomaton" | Usa Chrome en Android; `sudo systemctl restart bluetooth photomaton-ble` |
 | Reinicios solos | Fuente de alimentación insuficiente: usa la oficial de 27 W |
 | `get_throttled` distinto de `0x0` | Poca corriente o mucha temperatura: ventilador y fuente oficial |
+| No imprime | `lpstat -p SELPHY`; si está pausada: `cupsenable SELPHY`. Papel y cartucho bien puestos |
 | No suena | La Pi 5 no tiene audio: altavoz USB/Bluetooth, o usa el sonido de la webapp |
