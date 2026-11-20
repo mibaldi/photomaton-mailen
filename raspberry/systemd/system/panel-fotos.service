@@ -1,0 +1,14 @@
+[Unit]
+Description=Panel de fotos del photomaton para los invitados (puerto 80)
+After=network.target
+
+[Service]
+User=admin
+# Python de photobooth-app: trae Pillow para las miniaturas
+ExecStart=/home/admin/.local/share/pipx/venvs/photobooth-app/bin/python /home/admin/panel-fotos/panel-fotos.py
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

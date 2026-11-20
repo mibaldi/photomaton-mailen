@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Servidor BLE (GATT) del photomatón: recibe órdenes de texto desde la webapp (Web Bluetooth).
-Órdenes: foto | estado | imprimir | auto_on | auto_off | apagar | reiniciar | ping. Responde por notificación en la característica RESP.
+Órdenes: foto | estado | imprimir | auto_on | auto_off | invitados_on | invitados_off | wifi_fiesta_on | wifi_fiesta_off |
+apagar | reiniciar | ping. Responde por notificación en la característica RESP.
 Se ejecuta como servicio de sistema (root)."""
 import glob, json, os, socket, subprocess, threading, urllib.request
 import dbus, dbus.exceptions, dbus.mainloop.glib, dbus.service
@@ -46,7 +47,7 @@ def estado():
         "alim_ok": thr.endswith("=0x0"),
         "wifi": sh("nmcli -t -f active,ssid dev wifi | grep ^yes | cut -d: -f2") or None,
         "internet": sh("ping -c1 -W2 8.8.8.8 >/dev/null 2>&1 && echo si") == "si",
-        "pendientes_drive": None,
+        "hotspot": wifi_fiesta(),
         **estado_impresora(),
     }
 
@@ -67,7 +68,13 @@ def estado_impresora():
         "auto_print": os.path.exists(os.path.join(IMPR_CFG, "auto")),
         "impresas": int(leer("contador")),
         "limite": int(leer("limite")),
+        "invitados": not os.path.exists(os.path.join(IMPR_CFG, "invitados_no")),
     }
+
+
+def wifi_fiesta():
+    """True si la Pi está emitiendo su propia Wi-Fi (panel de fotos en http://10.42.0.1)."""
+    return "wifi-fiesta" in sh("nmcli -t -f NAME con show --active").splitlines()
 
 
 def como_admin(*args):
@@ -221,6 +228,19 @@ def main():
             como_admin("mkdir", "-p", IMPR_CFG)
             como_admin("touch" if txt == "auto_on" else "rm", "-f" if txt == "auto_off" else "--", os.path.join(IMPR_CFG, "auto"))
             responder({"ok": True, "cmd": "auto", "msg": "Impresión automática " + ("activada" if txt == "auto_on" else "desactivada"), **estado_impresora()})
+        elif txt in ("invitados_on", "invitados_off"):
+            como_admin("mkdir", "-p", IMPR_CFG)
+            como_admin("rm" if txt == "invitados_on" else "touch", "-f" if txt == "invitados_on" else "--", os.path.join(IMPR_CFG, "invitados_no"))
+            responder({"ok": True, "cmd": "invitados", "msg": "Los invitados " + ("pueden" if txt == "invitados_on" else "ya no pueden") + " imprimir desde el panel", **estado_impresora()})
+        elif txt in ("wifi_fiesta_on", "wifi_fiesta_off"):
+            if "wifi-fiesta" not in sh("nmcli -t -f NAME con show").splitlines():
+                responder({"ok": False, "cmd": "wifi", "msg": "La Wi-Fi de la fiesta no está creada (raspberry/red/crear-wifi-fiesta.sh)", "hotspot": False})
+                return
+            sh("nmcli con " + ("up" if txt == "wifi_fiesta_on" else "down") + " wifi-fiesta")
+            threading.Event().wait(3)
+            on = wifi_fiesta()
+            responder({"ok": on == (txt == "wifi_fiesta_on"), "cmd": "wifi", "hotspot": on,
+                       "msg": "📶 Wi-Fi de la fiesta encendida: panel en http://10.42.0.1" if on else "Wi-Fi de la fiesta apagada (vuelve a la Wi-Fi de casa si está cerca)"})
         elif txt == "ping":
             responder({"ok": True, "cmd": "ping", "msg": "pong"})
         else:

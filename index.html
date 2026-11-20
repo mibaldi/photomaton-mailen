@@ -69,6 +69,14 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
   </div>
 
   <div class="card">
+    <div class="estado-con">📱 Panel de fotos: <span id="wifiEstado" style="font-weight:600">—</span></div>
+    <p class="sub" style="text-align:left;margin:8px 0 10px;font-size:.88rem">Los invitados se conectan a la Wi-Fi del photomatón y abren <b>http://10.42.0.1</b> para ver, guardar, mandar por WhatsApp o imprimir sus fotos.</p>
+    <button id="bWifi" class="sec" disabled>📶 Encender Wi-Fi de la fiesta</button>
+    <div style="height:12px"></div>
+    <label class="opc"><input type="checkbox" id="cInvitados" disabled> Los invitados pueden imprimir desde el panel</label>
+  </div>
+
+  <div class="card">
     <label class="opc"><input type="checkbox" id="cEfectos" checked> 🔊 Sonido y flash en este móvil al hacer cada foto</label>
     <p class="sub" style="text-align:left;margin-top:8px;font-size:.88rem">Deja esta página abierta y con la pantalla encendida; suena con el volumen del móvil.</p>
   </div>
@@ -83,7 +91,7 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
 const SVC="a07498ca-ad5b-474e-940d-16f1fbe7e8cd", CMD="a07498ca-ad5b-474e-940d-16f1fbe7e8ce", RESP="a07498ca-ad5b-474e-940d-16f1fbe7e8cf";
 let dev=null, cmdChar=null;
 const $=id=>document.getElementById(id);
-const botones=["bFoto","bEstado","bReiniciar","bApagar","bImprimir","cAuto"];
+const botones=["bFoto","bEstado","bReiniciar","bApagar","bImprimir","cAuto","bWifi","cInvitados"];
 const log=t=>$("log").textContent=t;
 
 if(!navigator.bluetooth){$("noble").classList.remove("oculto");$("bConectar").disabled=true}
@@ -126,6 +134,12 @@ function respuesta(txt){
   if("impresora" in d){
     $("impEstado").textContent=d.impresora+(d.impresas!==undefined?` · ${d.impresas}${d.limite?"/"+d.limite:""} impresas`:"");
     $("cAuto").checked=!!d.auto_print;
+    if("invitados" in d) $("cInvitados").checked=!!d.invitados;
+  }
+  if("hotspot" in d){
+    hotspot=!!d.hotspot;
+    $("wifiEstado").textContent=hotspot?"✅ Wi-Fi de la fiesta encendida":"apagado (Pi en la Wi-Fi de casa o sin red)";
+    $("bWifi").textContent=hotspot?"📴 Apagar Wi-Fi de la fiesta":"📶 Encender Wi-Fi de la fiesta";
   }
   if(d.cmd==="estado"){
     const filas=[["App",d.app?"✅ OK":"❌ parada"],["Cámara",d.camara?"✅ OK":"❌ no detectada"],["Fotos",d.fotos],
@@ -170,6 +184,9 @@ $("bConectar").onclick=conectar;
 $("bFoto").onclick=()=>{$("bFoto").disabled=true;log("📷 ¡Sonreíd!");enviar("foto");setTimeout(()=>{if(dev?.gatt?.connected)$("bFoto").disabled=false},8000)};
 $("bEstado").onclick=()=>enviar("estado");
 $("bImprimir").onclick=()=>{$("bImprimir").disabled=true;log("🖨 Enviando a la impresora…");enviar("imprimir");setTimeout(()=>{if(dev?.gatt?.connected)$("bImprimir").disabled=false},5000)};
+let hotspot=false;
+$("bWifi").onclick=()=>{$("bWifi").disabled=true;log(hotspot?"Apagando la Wi-Fi de la fiesta…":"Encendiendo la Wi-Fi de la fiesta…");enviar(hotspot?"wifi_fiesta_off":"wifi_fiesta_on");setTimeout(()=>{if(dev?.gatt?.connected)$("bWifi").disabled=false},6000)};
+$("cInvitados").onchange=()=>enviar($("cInvitados").checked?"invitados_on":"invitados_off");
 $("cAuto").onchange=()=>enviar($("cAuto").checked?"auto_on":"auto_off");
 $("bReiniciar").onclick=()=>{if(confirm("¿Reiniciar el photomatón?"))enviar("reiniciar")};
 $("bApagar").onclick=()=>{if(confirm("¿Seguro que quieres APAGAR el photomatón?"))enviar("apagar")};

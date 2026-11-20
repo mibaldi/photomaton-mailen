@@ -18,7 +18,8 @@ Todos los ficheros mencionados están en esta carpeta (`raspberry/`). Los de imp
 10. [Apagar de forma segura](#10-apagar-de-forma-segura)
 11. [Extras con internet: bot de Telegram y subida a Google Drive](#11-extras-con-internet)
 12. [Impresora Canon SELPHY CP1500](#12-impresora-canon-selphy-cp1500)
-13. [Comprobaciones y problemas conocidos](#13-comprobaciones-y-problemas-conocidos)
+13. [Panel de fotos para los invitados](#13-panel-de-fotos-para-los-invitados)
+14. [Comprobaciones y problemas conocidos](#14-comprobaciones-y-problemas-conocidos)
 
 En esta guía el usuario de la Pi se llama `admin`. Si usas otro, cambia `/home/admin` y `admin` en los ficheros.
 
@@ -305,8 +306,27 @@ Cómo se imprime:
 - **Impresión automática**: casilla en la webapp (órdenes `auto_on` / `auto_off`). El plugin commander ejecuta `imprimir-foto.sh auto` al terminar cada foto, que solo imprime si existe `~/.config/photomaton-impresion/auto`.
 - **Límite de copias** (para que no se acabe el papel): `echo 54 > ~/.config/photomaton-impresion/limite`. El contador está en `~/.config/photomaton-impresion/contador` (bórralo para empezar de cero).
 - Registro en `~/photobooth-data/log/impresion.log`.
+- **Una foto cada vez**: CUPS da el trabajo por terminado al enviar los datos, pero la SELPHY sigue imprimiendo ~1 min. Si le llega otra foto en ese rato, el driver se cuelga. `imprimir-foto.sh` encola en segundo plano, espera 60 s entre fotos y, si una se atasca más de 150 s, la cancela, reinicia CUPS y la reintenta.
 
-## 13. Comprobaciones y problemas conocidos
+## 13. Panel de fotos para los invitados
+
+Los invitados se conectan a una **Wi-Fi que emite la propia Pi** (sin internet) y abren **http://10.42.0.1**: ven todas las fotos, las guardan, las mandan por WhatsApp o las imprimen. Funciona en Android y en iPhone, sin instalar nada.
+
+```bash
+mkdir -p ~/panel-fotos && cp panel/panel-fotos.py panel/index.html ~/panel-fotos/
+sudo cp systemd/system/panel-fotos.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now panel-fotos
+# Wi-Fi de la fiesta (elige tu nombre y contraseña; no la subas al repo)
+sudo red/crear-wifi-fiesta.sh "Photomaton Mailen" "tu-contraseña"
+```
+
+- `panel-fotos.py` es un servidor web sin dependencias (usa el Python de photobooth-app por Pillow, para las miniaturas). Escucha en el puerto 80; las fotos de prueba de `~/.config/rclone/excluir_pruebas.txt` no salen.
+- **Compartir**: como la página va por `http` (sin https), el navegador no deja usar el menú de compartir; el panel explica el gesto: mantener pulsada la foto → *Compartir imagen* → WhatsApp, o *Guardar* y mandarla desde la galería. WhatsApp la envía en cuanto el móvil tenga datos.
+- **Imprimir**: hay que tocar dos veces (confirmación) y cada móvil espera 20 s entre impresiones. Se puede desactivar desde la webapp (casilla "Los invitados pueden imprimir", órdenes BLE `invitados_on` / `invitados_off`).
+- **Wi-Fi de la fiesta**: se enciende sola si al arrancar la Pi no ve ninguna Wi-Fi conocida. Si la fiesta es en casa, enciéndela desde la webapp ("📶 Encender Wi-Fi de la fiesta", órdenes `wifi_fiesta_on` / `wifi_fiesta_off`). Mientras está encendida, la Pi no está en la Wi-Fi de casa.
+- **Cartel con QR**: `impresion-3d/` no lo incluye porque lleva la contraseña; genéralo con un QR `WIFI:T:WPA;S:<nombre>;P:<clave>;;` y otro con `http://10.42.0.1`.
+
+## 14. Comprobaciones y problemas conocidos
 
 ```bash
 systemctl --user is-active photobooth-app mandos-foto photomaton-bot photobooth-drive.timer
