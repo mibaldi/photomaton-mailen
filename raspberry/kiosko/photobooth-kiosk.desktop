@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=Photobooth kiosk
+Exec=/home/admin/photobooth-kiosk.sh
+X-GNOME-Autostart-enabled=true

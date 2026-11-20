@@ -1,0 +1,7 @@
+[Unit]
+Description=Subir fotos del photomaton a Google Drive
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/rclone copy %h/photobooth-data/media/processed_full gdrive:Fotos --exclude-from %h/.config/rclone/excluir_pruebas.txt --transfers 2 --retries 3 --low-level-retries 5 --contimeout 15s --timeout 60s --log-file %h/photobooth-data/log/drive-sync.log --log-level INFO

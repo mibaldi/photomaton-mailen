@@ -1,0 +1,10 @@
+[Unit]
+Description=Bot de Telegram del photomatón
+
+[Service]
+ExecStart=/usr/bin/python3 %h/bin/photomaton-bot.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

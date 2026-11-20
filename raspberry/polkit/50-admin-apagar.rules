@@ -1,0 +1,9 @@
+// Permite al usuario "admin" apagar y reiniciar sin contraseña (lo usan el bot, el servidor BLE y el botón de encendido)
+polkit.addRule(function(action, subject) {
+  if ((action.id == "org.freedesktop.login1.power-off" ||
+       action.id == "org.freedesktop.login1.power-off-multiple-sessions" ||
+       action.id == "org.freedesktop.login1.reboot" ||
+       action.id == "org.freedesktop.login1.reboot-multiple-sessions") && subject.user == "admin") {
+    return polkit.Result.YES;
+  }
+});

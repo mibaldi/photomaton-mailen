@@ -1,0 +1,10 @@
+[Unit]
+Description=Subir fotos del photomaton a Drive cada minuto
+
+[Timer]
+OnBootSec=1min
+OnUnitInactiveSec=1min
+Unit=photobooth-drive.service
+
+[Install]
+WantedBy=timers.target

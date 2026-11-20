@@ -1,0 +1,10 @@
+[Unit]
+Description=Mandos BLE -> foto photobooth
+
+[Service]
+ExecStart=/usr/bin/python3 %h/bin/mandos-foto.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target
