@@ -10,3 +10,6 @@
 #pm-nombre{position:fixed;left:50%;top:22px;transform:translateX(-50%);z-index:2147483001;background:rgba(0,0,0,.6);color:#fff;
   font:700 40px system-ui,sans-serif;padding:10px 26px;border-radius:999px;pointer-events:none;opacity:0;transition:opacity .3s}
 #pm-nombre.on{opacity:1}
+#pm-modo{left:18px;top:18px;height:84px;padding:0 28px;border-radius:999px;font-size:38px;background:rgba(0,0,0,.5)}
+#pm-pista{position:fixed;left:50%;top:118px;transform:translateX(-50%);z-index:2147483000;background:rgba(0,0,0,.45);color:#fff;
+  font:700 32px system-ui,sans-serif;padding:12px 26px;border-radius:20px;pointer-events:none;display:none;text-align:center}

@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Elección de marco del photomatón (solo en la Pi, 127.0.0.1:8010).
+"""Elección de marco y de modo del photomatón (solo en la Pi, 127.0.0.1:8010).
 Cada marco es una acción "image" de photobooth-app (misma configuración, distinto img_frame): la acción N
 lleva el marco N de marcos.json. Este servicio guarda cuál está elegido y dispara la foto con él.
 
-  GET  /estado              {"actual": i, "marcos": [{"clave","nombre","archivo"}]}
-  POST /elegir/<i>  /siguiente  /anterior
-  POST /disparar            foto con el marco elegido (lo usan la pantalla, los mandos y el BLE)
+  GET  /estado              {"actual": i, "modo": "foto", "modos": [...], "marcos": [{"clave","nombre","archivo"}]}
+  POST /elegir/<i>  /siguiente  /anterior        marco (solo modo foto)
+  POST /modo/<foto|tira|boomerang>  /modo_sig    modo
+  POST /disparar            según el modo: foto con el marco elegido, tira de 4 o boomerang
+                            (lo usan la pantalla, los mandos y el BLE)
   GET  /png/<archivo>       imagen del marco (para dibujarlo sobre la previsualización)"""
 import json, os, re, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -14,6 +16,22 @@ DIR = os.environ.get("MARCOS_DIR", "/home/admin/photobooth-data/userdata/marcos"
 ESTADO = os.environ.get("MARCOS_ESTADO", "/home/admin/.config/photomaton-marco")
 APP = os.environ.get("MARCOS_APP", "http://localhost:8000")
 PUERTO = int(os.environ.get("MARCOS_PUERTO", "8010"))
+MODOS = ["foto", "tira", "boomerang"]
+ACCION = {"tira": "collage/0", "boomerang": "video/0"}
+
+
+def modo():
+    try:
+        m = open(ESTADO + "-modo").read().strip()
+    except Exception:
+        m = "foto"
+    return m if m in MODOS else "foto"
+
+
+def poner_modo(m):
+    with open(ESTADO + "-modo.tmp", "w") as f:
+        f.write(m)
+    os.replace(ESTADO + "-modo.tmp", ESTADO + "-modo")
 
 
 def marcos():
@@ -40,7 +58,7 @@ def elegir(i):
 
 
 def estado():
-    return {"actual": actual(), "marcos": marcos()}
+    return {"actual": actual(), "modo": modo(), "modos": MODOS, "marcos": marcos()}
 
 
 class H(BaseHTTPRequestHandler):
@@ -81,13 +99,18 @@ class H(BaseHTTPRequestHandler):
             elegir(actual() + 1)
         elif p == "/anterior":
             elegir(actual() - 1)
+        elif re.fullmatch(r"/modo/(foto|tira|boomerang)", p):
+            poner_modo(p.split("/")[2])
+        elif p == "/modo_sig":
+            poner_modo(MODOS[(MODOS.index(modo()) + 1) % len(MODOS)])
         elif p == "/disparar":
-            i = actual()
+            i, m = actual(), modo()
+            accion = ACCION.get(m, f"image/{i}")
             try:
-                urllib.request.urlopen(f"{APP}/api/actions/image/{i}", timeout=10).read()
+                urllib.request.urlopen(f"{APP}/api/actions/{accion}", timeout=10).read()
             except Exception as e:
                 return self.resp(502, {"ok": False, "msg": str(e)})
-            return self.resp(200, {"ok": True, "marco": i})
+            return self.resp(200, {"ok": True, "modo": m, "marco": i})
         else:
             return self.resp(404, {"error": "no existe"})
         self.resp(200, estado())

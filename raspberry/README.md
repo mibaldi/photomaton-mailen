@@ -19,7 +19,7 @@ Todos los ficheros mencionados están en esta carpeta (`raspberry/`). Los de imp
 11. [Extras con internet: bot de Telegram y subida a Google Drive](#11-extras-con-internet)
 12. [Impresora Canon SELPHY CP1500](#12-impresora-canon-selphy-cp1500)
 13. [Ver, compartir e imprimir las fotos desde el móvil](#13-ver-compartir-e-imprimir-las-fotos-desde-el-móvil)
-14. [Marcos a elegir](#14-marcos-a-elegir)
+14. [Marcos y modos (foto, tira de 4, boomerang)](#14-marcos-y-modos)
 15. [Comprobaciones y problemas conocidos](#15-comprobaciones-y-problemas-conocidos)
 
 En esta guía el usuario de la Pi se llama `admin`. Si usas otro, cambia `/home/admin` y `admin` en los ficheros.
@@ -341,12 +341,18 @@ sudo red/crear-wifi-fiesta.sh "Photomaton Mailen" "tu-contraseña"
 - **Wi-Fi de la fiesta**: se enciende sola si al arrancar la Pi no ve ninguna Wi-Fi conocida. Si la fiesta es en casa, enciéndela desde la webapp ("📶 Encender Wi-Fi de la fiesta", órdenes `wifi_fiesta_on` / `wifi_fiesta_off`). Mientras está encendida, la Pi no está en la Wi-Fi de casa.
 - **Cartel con QR**: `impresion-3d/` no lo incluye porque lleva la contraseña; genéralo con un QR `WIFI:T:WPA;S:<nombre>;P:<clave>;;` y otro con `http://10.42.0.1`.
 
-## 14. Marcos a elegir
+## 14. Marcos y modos
 
-Seis marcos sin texto (`marcos/png`, generados con `marcos/generar_marcos.py`): **Mailen** (banderines con su nombre y globos), **Confeti**, **Polaroid**, **Película**, **Neón** y **Dorado**. Se cambian con las **flechas ‹ › de los lados de la pantalla** (el marco se ve en directo sobre la cámara) o desde la webapp; la foto sale con el marco elegido, también con los mandos.
+**Modos** (botón arriba a la izquierda en la pantalla o en la webapp):
 
-- Cada marco es una acción `image` de photobooth-app (la acción N lleva el marco N): `marcos/ajustar_marcos.py` las crea copiando la acción 0 y desactiva el marco fijo de la previsualización.
-- `marcos/marcos-servicio.py` (servicio de usuario `marcos`, 127.0.0.1:8010) guarda el marco elegido en `~/.config/photomaton-marco` y dispara la acción correspondiente (`POST /disparar`). Lo usan la pantalla, `mandos-foto.py` y el servidor BLE (órdenes `marco <n>`, `marco_sig`, `marco_ant`).
+- **📷 Foto** con el marco elegido.
+- **🎞 Tira de 4**: 4 fotos seguidas (cuenta atrás de 3 s y 2 s entre fotos) montadas en una lámina de tamaño postal (`marcos/png/collage_4.png`, huecos en `marcos/collage.json`). Se imprime entera y también con la impresión automática.
+- **🔁 Boomerang**: vídeo de 3 s de ida y vuelta (mp4). Sale en la galería del móvil y se comparte por WhatsApp; no se imprime. Necesita `ffmpeg` (`sudo apt install -y ffmpeg`).
+
+Siete marcos sin texto (`marcos/png`, generados con `marcos/generar_marcos.py`): **Mailen** (banderines con su nombre y globos), **Confeti**, **Polaroid**, **Película**, **Neón**, **Dorado** y **Blanco y negro** (polaroid + filtro `inkwell`; la previsualización se ve en gris). Se cambian con las **flechas ‹ › de los lados de la pantalla** (el marco se ve en directo sobre la cámara) o desde la webapp; la foto sale con el marco elegido, también con los mandos.
+
+- Cada marco es una acción `image` de photobooth-app (la acción N lleva el marco N); la tira es `collage/0` y el boomerang `video/0`. `marcos/ajustar_marcos.py` lo crea todo copiando la acción 0, desactiva el marco fijo de la previsualización y añade `collage` a la impresión automática.
+- `marcos/marcos-servicio.py` (servicio de usuario `marcos`, 127.0.0.1:8010) guarda el marco elegido en `~/.config/photomaton-marco` y el modo en `~/.config/photomaton-marco-modo`, y dispara la acción correspondiente (`POST /disparar`). Lo usan la pantalla, `mandos-foto.py` y el servidor BLE (órdenes `marco <n>`, `marco_sig`, `marco_ant`, `modo <foto|tira|boomerang>`).
 - `marcos/extension/` es una extensión de Chromium que el quiosco carga con `--load-extension=/home/admin/marcos/extension` (y `--disable-features=…,DisableLoadExtensionCommandLineSwitch`): dibuja el marco sobre el `<img>` del stream y añade las flechas y el botón 📷.
 
 ```bash

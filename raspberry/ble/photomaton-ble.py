@@ -2,7 +2,7 @@
 """Servidor BLE (GATT) del photomatón: recibe órdenes de texto desde la webapp (Web Bluetooth).
 Órdenes: foto | estado | imprimir | auto_on | auto_off | invitados_on | invitados_off | wifi_fiesta_on | wifi_fiesta_off |
 apagar | reiniciar | ping.
-Marcos: marco <n> | marco_sig | marco_ant (los guarda marcos-servicio en 127.0.0.1:8010).
+Marcos y modos: marco <n> | marco_sig | marco_ant | modo <foto|tira|boomerang> (los guarda marcos-servicio, 127.0.0.1:8010).
 Galería por BLE: lista | mini <foto> | ver <foto> | trozos <tipo> <foto> <n,n,…> | imprimir <foto>.
   La cabecera {"cmd":"datos",tipo,id,tam,trozo,n} va por RESP y los bytes por la característica DATA,
   en trozos de [2 bytes de número de trozo][datos]. La webapp junta los trozos y pide los que falten. Responde por notificación en la característica RESP.
@@ -35,7 +35,7 @@ def sh(cmd):
 
 
 def n_fotos():
-    return len(glob.glob(os.path.join(FOTOS, "*.jpg")))
+    return len(glob.glob(os.path.join(FOTOS, "*.jpg"))) + len(glob.glob(os.path.join(FOTOS, "*.mp4")))
 
 
 def estado():
@@ -54,7 +54,7 @@ def estado():
         "wifi": sh("nmcli -t -f active,ssid dev wifi | grep ^yes | cut -d: -f2") or None,
         "internet": sh("ping -c1 -W2 8.8.8.8 >/dev/null 2>&1 && echo si") == "si",
         "hotspot": wifi_fiesta(),
-        "marco": marco_actual(),
+        **marco_y_modo(),
         **estado_impresora(),
     }
 
@@ -88,7 +88,7 @@ def wifi_fiesta():
 CACHE = "/home/admin/photobooth-data/ble-cache"
 EXCLUIR = "/home/admin/.config/rclone/excluir_pruebas.txt"     # las fotos de prueba no salen
 PY_FOTOS = "/home/admin/.local/share/pipx/venvs/photobooth-app/bin/python"   # trae Pillow
-NOMBRE_OK = re.compile(r"^[\w.-]+\.jpg$")
+NOMBRE_OK = re.compile(r"^[\w.-]+\.(jpg|mp4)$")      # fotos/tiras (jpg) y boomerangs (mp4)
 TAMANOS = {"mini": (320, 65), "foto": (1280, 80)}   # lado mayor, calidad JPEG
 PAUSA_TROZO = 0.008                                 # s entre notificaciones (no saturar D-Bus/BlueZ)
 REDUCIR = """import sys
@@ -103,7 +103,7 @@ def lista_fotos():
         excl = [l.strip().lstrip("/") for l in open(EXCLUIR) if l.strip() and not l.startswith("#")]
     except OSError:
         excl = []
-    fotos = [(os.path.getmtime(f), os.path.basename(f)) for f in glob.glob(os.path.join(FOTOS, "*.jpg"))]
+    fotos = [(os.path.getmtime(f), os.path.basename(f)) for f in glob.glob(os.path.join(FOTOS, "*.jpg")) + glob.glob(os.path.join(FOTOS, "*.mp4"))]
     return [n for _, n in sorted(fotos, reverse=True) if NOMBRE_OK.match(n) and not any(fnmatch.fnmatch(n, p) for p in excl)]
 
 
@@ -118,6 +118,8 @@ def foto_reducida(nombre, tipo):
     if not src:
         return None
     os.makedirs(CACHE, exist_ok=True)
+    if nombre.endswith(".mp4"):
+        return video_reducido(src, nombre, tipo)
     dst = os.path.join(CACHE, f"{tipo}-{nombre}")
     if not os.path.exists(dst) or os.path.getmtime(dst) < os.path.getmtime(src):
         lado, q = TAMANOS[tipo]
@@ -128,16 +130,33 @@ def foto_reducida(nombre, tipo):
     return open(dst, "rb").read()
 
 
+def video_reducido(src, nombre, tipo):
+    """Boomerang: la miniatura es un fotograma; para verlo, el vídeo a 480 px (unos 200-300 KB por Bluetooth)."""
+    if tipo == "mini":
+        dst = os.path.join(CACHE, f"mini-{nombre[:-4]}.jpg")
+        args = ["ffmpeg", "-y", "-loglevel", "error", "-ss", "0.3", "-i", src, "-frames:v", "1", "-vf", "scale=320:-2", dst + ".tmp.jpg"]
+    else:
+        dst = os.path.join(CACHE, f"foto-{nombre}")
+        args = ["ffmpeg", "-y", "-loglevel", "error", "-i", src, "-vf", "scale=480:-2", "-c:v", "libx264", "-preset", "veryfast",
+                "-crf", "30", "-pix_fmt", "yuv420p", "-an", "-movflags", "+faststart", dst + ".tmp.mp4"]
+    if not os.path.exists(dst) or os.path.getmtime(dst) < os.path.getmtime(src):
+        if subprocess.run(args, capture_output=True, timeout=90).returncode != 0:
+            return None
+        os.replace(args[-1], dst)
+    return open(dst, "rb").read()
+
+
 def marcos_api(ruta, metodo="POST"):
     req = urllib.request.Request(MARCOS + ruta, data=b"" if metodo == "POST" else None, method=metodo)
     return json.loads(urllib.request.urlopen(req, timeout=10).read())
 
 
-def marco_actual():
+def marco_y_modo():
     try:
-        return marcos_api("/estado", "GET")["actual"]
+        e = marcos_api("/estado", "GET")
+        return {"marco": e["actual"], "modo": e["modo"]}
     except Exception:
-        return None
+        return {"marco": None, "modo": None}
 
 
 def como_admin(*args):
@@ -285,7 +304,8 @@ def main():
                 trozo = trozo_max()
                 n = (len(data) + trozo - 1) // trozo
                 ultimo.update(tipo=tipo, id=ident, data=data, trozo=trozo)
-                responder({"ok": True, "cmd": "datos", "tipo": tipo, "id": ident, "tam": len(data), "trozo": trozo, "n": n})
+                responder({"ok": True, "cmd": "datos", "tipo": tipo, "id": ident, "tam": len(data), "trozo": trozo, "n": n,
+                       "video": ident.endswith(".mp4") and tipo == "foto"})
                 time.sleep(0.05)
                 indices = range(n)
             else:
@@ -313,8 +333,8 @@ def main():
                 enviar_datos(partes[1], partes[2], ultimo["data"], solo=faltan)
         elif orden == "imprimir" and len(partes) == 2:
             ruta = ruta_foto(partes[1])
-            if not ruta:
-                responder({"ok": False, "cmd": "imprimir", "msg": "⚠️ Esa foto no existe"})
+            if not ruta or not ruta.endswith(".jpg"):
+                responder({"ok": False, "cmd": "imprimir", "msg": "⚠️ Solo se pueden imprimir fotos"})
                 return
             rc, out = como_admin("/home/admin/bin/imprimir-foto.sh", ruta)
             responder({"ok": rc == 0, "cmd": "imprimir", "msg": ("🖨 " if rc == 0 else "⚠️ ") + (out.replace("OK ", "") or "sin respuesta"), **estado_impresora()})
@@ -333,12 +353,12 @@ def main():
                 responder({"ok": False, "cmd": "foto", "msg": f"No se pudo disparar: {e}"})
                 return
             responder({"ok": True, "cmd": "foto", "msg": "Foto en marcha…"})
-            for _ in range(40):
+            for _ in range(60):
                 threading.Event().wait(1)
                 if n_fotos() > antes:
                     responder({"ok": True, "cmd": "foto_hecha", "msg": "¡Foto hecha!", "fotos": n_fotos()})
                     return
-            responder({"ok": False, "cmd": "foto", "msg": "La foto no ha aparecido en 40 s"})
+            responder({"ok": False, "cmd": "foto", "msg": "La foto no ha aparecido en 60 s"})
         elif txt == "estado":
             responder({"ok": True, "cmd": "estado", **estado()})
         elif txt == "apagar":
@@ -371,9 +391,16 @@ def main():
             ruta = {"marco_sig": "/siguiente", "marco_ant": "/anterior"}.get(txt) or "/elegir/" + txt.split()[1]
             try:
                 e = marcos_api(ruta)
-                responder({"ok": True, "cmd": "marco", "marco": e["actual"], "msg": "🖼 Marco: " + e["marcos"][e["actual"]]["nombre"]})
+                responder({"ok": True, "cmd": "marco", "marco": e["actual"], "modo": e["modo"], "msg": "🖼 Marco: " + e["marcos"][e["actual"]]["nombre"]})
             except Exception as ex:
                 responder({"ok": False, "cmd": "marco", "msg": f"No se pudo cambiar el marco: {ex}"})
+        elif re.fullmatch(r"modo (foto|tira|boomerang)", txt):
+            try:
+                e = marcos_api("/modo/" + txt.split()[1])
+                nombres = {"foto": "📷 Foto", "tira": "🎞 Tira de 4 fotos", "boomerang": "🔁 Boomerang"}
+                responder({"ok": True, "cmd": "modo", "modo": e["modo"], "marco": e["actual"], "msg": "Modo: " + nombres[e["modo"]]})
+            except Exception as ex:
+                responder({"ok": False, "cmd": "modo", "msg": f"No se pudo cambiar el modo: {ex}"})
         elif txt == "ping":
             responder({"ok": True, "cmd": "ping", "msg": "pong"})
         else:

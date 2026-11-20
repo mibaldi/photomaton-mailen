@@ -190,6 +190,42 @@ def marco_dorado():
     return im
 
 
+# ---------- Tira de 4 fotos (collage 2x2 en tamaño postal 1800x1200) ----------
+CW, CH = 1800, 1200
+HUECOS = []                        # (x, y, ancho, alto) de cada foto, lo usa también la configuración
+_m, _g = 60, 34
+_aw = (CW - 2 * _m - _g) // 2
+_ah = _aw * 9 // 16
+_y0 = (CH - 2 * _ah - _g) // 2
+for _f in range(2):
+    for _c in range(2):
+        HUECOS.append((_m + _c * (_aw + _g), _y0 + _f * (_ah + _g), _aw, _ah))
+
+
+def collage_frente():
+    """Capa delantera del collage: fondo de fiesta con 4 huecos transparentes."""
+    s2 = 2
+    im = Image.new("RGBA", (CW * s2, CH * s2), "#fff7fa")
+    d = ImageDraw.Draw(im)
+    rnd = random.Random(21)
+    huecos = [(x * s2, y * s2, (x + w) * s2, (y + h) * s2) for x, y, w, h in HUECOS]
+    for _ in range(1400):
+        x, y = rnd.uniform(0, CW * s2), rnd.uniform(0, CH * s2)
+        if any(a - 10 < x < c + 10 and b - 10 < y < e + 10 for a, b, c, e in huecos):
+            continue
+        c = rnd.choice(COLS); r = rnd.uniform(4, 9) * s2
+        if rnd.random() < .5:
+            d.ellipse([x - r, y - r, x + r, y + r], fill=c)
+        else:
+            a = rnd.uniform(0, math.pi); dx, dy = math.cos(a) * r * 1.8, math.sin(a) * r * 1.8
+            d.line([x - dx, y - dy, x + dx, y + dy], fill=c, width=4 * s2)
+    for a, b, c, e in huecos:
+        d.rounded_rectangle([a - 8 * s2, b - 8 * s2, c + 8 * s2, e + 8 * s2], radius=22 * s2, fill="white")
+    for a, b, c, e in huecos:
+        d.rounded_rectangle([a, b, c, e], radius=16 * s2, fill=(0, 0, 0, 0))
+    return im.resize((CW, CH), Image.LANCZOS)
+
+
 MARCOS = [("mailen", "Mailen", marco_mailen), ("confeti", "Confeti", marco_confeti), ("polaroid", "Polaroid", marco_polaroid),
           ("pelicula", "Película", marco_pelicula), ("neon", "Neón", marco_neon), ("dorado", "Dorado", marco_dorado)]
 
@@ -205,9 +241,22 @@ if __name__ == "__main__":
         comp = Image.alpha_composite(ejemplo, m).convert("RGB")
         comp.resize((320, 180), Image.LANCZOS).save(os.path.join(base, "miniaturas", f"{clave}.jpg"), quality=80)
         muestras.append(comp.resize((640, 360), Image.LANCZOS))
-    json.dump([{"clave": c, "nombre": n, "archivo": f"{c}.png"} for c, n, _ in MARCOS],
+    lista = [{"clave": c, "nombre": n, "archivo": f"{c}.png"} for c, n, _ in MARCOS]
+    # Blanco y negro: marco polaroid + filtro (la extensión pone la previsualización en gris)
+    lista.append({"clave": "byn", "nombre": "Blanco y negro", "archivo": "polaroid.png", "filtro": "FilterPilgram2.inkwell"})
+    byn = Image.alpha_composite(ejemplo.convert("L").convert("RGBA"), Image.open(os.path.join(base, "png", "polaroid.png"))).convert("RGB")
+    byn.resize((320, 180), Image.LANCZOS).save(os.path.join(base, "miniaturas", "byn.jpg"), quality=80)
+    muestras.append(byn.resize((640, 360), Image.LANCZOS))
+    # Collage de 4 fotos
+    frente = collage_frente(); frente.save(os.path.join(base, "png", "collage_4.png"))
+    col = Image.new("RGBA", (CW, CH))
+    for x, y, w2, h2 in HUECOS:
+        col.paste(ejemplo.resize((w2, h2)), (x, y))
+    col = Image.alpha_composite(col, frente).convert("RGB"); col.save(os.path.join(base, "muestra_collage.jpg"), quality=85)
+    json.dump({"huecos": HUECOS, "ancho": CW, "alto": CH}, open(os.path.join(base, "collage.json"), "w"))
+    json.dump(lista,
               open(os.path.join(base, "marcos.json"), "w"), ensure_ascii=False, indent=1)
-    hoja = Image.new("RGB", (1280, 360 * 3), "white")
+    hoja = Image.new("RGB", (1280, 360 * ((len(muestras) + 1) // 2)), "white")
     for i, m in enumerate(muestras):
         hoja.paste(m, ((i % 2) * 640, (i // 2) * 360))
     hoja.save(os.path.join(base, "muestras.jpg"), quality=85)

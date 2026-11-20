@@ -28,5 +28,11 @@
   "clave": "dorado",
   "nombre": "Dorado",
   "archivo": "dorado.png"
+ },
+ {
+  "clave": "byn",
+  "nombre": "Blanco y negro",
+  "archivo": "polaroid.png",
+  "filtro": "FilterPilgram2.inkwell"
  }
 ]

@@ -36,6 +36,12 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
 #flash.on{opacity:1;transition:none}
 .opc{display:flex;align-items:center;gap:10px;font-weight:600}
 .opc input{width:22px;height:22px;accent-color:var(--pri)}
+#modos{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+#modos button{padding:12px 4px;font-size:.95rem;background:var(--card);color:var(--fg);border:2px solid var(--line)}
+#modos button.sel{background:var(--pri);color:#fff;border-color:var(--pri)}
+#marcos.apagado{opacity:.35;pointer-events:none}
+#rejilla .video::before{content:"▶";position:absolute;right:6px;bottom:4px;color:#fff;font-size:1rem;text-shadow:0 1px 3px #000;z-index:1}
+#vVid{max-width:100%;max-height:100%;display:none}
 #marcos{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
 #marcos button{padding:0;background:none;color:var(--fg);border:3px solid transparent;border-radius:12px;overflow:hidden;font-size:.8rem;font-weight:600}
 #marcos button img{width:100%;aspect-ratio:16/9;display:block;object-fit:cover}
@@ -66,7 +72,7 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
 <div id="flash"></div>
 <div id="visor" role="dialog" aria-modal="true">
   <div class="arriba"><span id="vCont"></span><button id="vCerrar" aria-label="Cerrar">×</button></div>
-  <div id="vMarco"><img id="vImg" alt="Foto del photomatón"><button class="flecha" id="vAnt" aria-label="Anterior">‹</button><button class="flecha" id="vSig" aria-label="Siguiente">›</button></div>
+  <div id="vMarco"><img id="vImg" alt="Foto del photomatón"><video id="vVid" autoplay loop muted playsinline></video><button class="flecha" id="vAnt" aria-label="Anterior">‹</button><button class="flecha" id="vSig" aria-label="Siguiente">›</button></div>
   <div id="vBarra"><div></div></div>
   <p id="vTexto"></p>
   <div class="acciones">
@@ -90,6 +96,13 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
   <div id="log"></div>
 
   <div class="card">
+    <div class="estado-con">✨ Modo</div>
+    <div id="modos">
+      <button data-m="foto" disabled>📷 Foto</button>
+      <button data-m="tira" disabled>🎞 Tira de 4</button>
+      <button data-m="boomerang" disabled>🔁 Boomerang</button>
+    </div>
+    <div style="height:14px"></div>
     <div class="estado-con">🖼 Marco de la foto: <span id="marcoNombre" style="font-weight:600">—</span></div>
     <div id="marcos"></div>
   </div>
@@ -140,7 +153,8 @@ const SVC="a07498ca-ad5b-474e-940d-16f1fbe7e8cd", CMD="a07498ca-ad5b-474e-940d-1
 let dev=null, cmdChar=null;
 const $=id=>document.getElementById(id);
 const botones=["bFoto","bEstado","bReiniciar","bApagar","bImprimir","cAuto","bWifi","cInvitados","bGaleria"];
-let listaMarcos=[], marcoActual=null;
+let listaMarcos=[], marcoActual=null, modoActual="foto";
+const TXT_DISPARO={foto:"📷 Hacer foto",tira:"🎞 Hacer tira de 4 fotos",boomerang:"🔁 Hacer boomerang"};
 const log=t=>$("log").textContent=t;
 
 if(!navigator.bluetooth){$("noble").classList.remove("oculto");$("bConectar").disabled=true}
@@ -151,6 +165,7 @@ function conectadoUI(on){
   botones.forEach(b=>$(b).disabled=!on);
   if(typeof mantenerPantalla==="function") mantenerPantalla(on);
   if(typeof pintarMarcos==="function") pintarMarcos(marcoActual);
+  if(typeof pintarModo==="function") pintarModo(modoActual);
   $("bConectar").textContent=on?"🔌 Desconectar":"🔗 Conectar al photomatón";
 }
 
@@ -187,6 +202,7 @@ function respuesta(txt){
   if(d.cmd==="click"){efectoFoto();return}
   if(d.cmd==="datos"){cabeceraDatos(d);return}
   if("marco" in d && d.marco!==null) pintarMarcos(d.marco);
+  if(d.modo) pintarModo(d.modo);
   if(d.cmd==="imprimir" && $("visor").classList.contains("on")) $("vTexto").textContent=d.msg;
   if("impresora" in d){
     $("impEstado").textContent=d.impresora+(d.impresas!==undefined?` · ${d.impresas}${d.limite?"/"+d.limite:""} impresas`:"");
@@ -238,7 +254,7 @@ document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==
 document.addEventListener("pointerdown",desbloquearAudio);
 
 $("bConectar").onclick=conectar;
-$("bFoto").onclick=()=>{$("bFoto").disabled=true;log("📷 ¡Sonreíd!");enviar("foto");setTimeout(()=>{if(dev?.gatt?.connected)$("bFoto").disabled=false},8000)};
+$("bFoto").onclick=()=>{$("bFoto").disabled=true;log(modoActual==="tira"?"🎞 ¡4 fotos seguidas, sonreíd!":modoActual==="boomerang"?"🔁 ¡Moveos!":"📷 ¡Sonreíd!");enviar("foto");setTimeout(()=>{if(dev?.gatt?.connected)$("bFoto").disabled=false},modoActual==="foto"?8000:20000)};
 $("bEstado").onclick=()=>enviar("estado");
 $("bImprimir").onclick=()=>{$("bImprimir").disabled=true;log("🖨 Enviando a la impresora…");enviar("imprimir");setTimeout(()=>{if(dev?.gatt?.connected)$("bImprimir").disabled=false},5000)};
 let hotspot=false;
@@ -256,6 +272,13 @@ function pintarMarcos(i){
   const con=!!dev?.gatt?.connected;
   $("marcos").innerHTML=listaMarcos.map((m,k)=>`<button data-k="${k}" class="${k===i?"sel":""}" ${con?"":"disabled"}><img src="marcos/miniaturas/${m.clave}.jpg" alt=""><span>${m.nombre}</span></button>`).join("");
 }
+function pintarModo(m){
+  modoActual=m;
+  document.querySelectorAll("#modos button").forEach(b=>{b.classList.toggle("sel",b.dataset.m===m);b.disabled=!dev?.gatt?.connected});
+  $("marcos").classList.toggle("apagado",m!=="foto");
+  if(!$("bFoto").disabled||!dev?.gatt?.connected) $("bFoto").textContent=TXT_DISPARO[m]||TXT_DISPARO.foto;
+}
+$("modos").onclick=e=>{const b=e.target.closest("button[data-m]");if(b){pintarModo(b.dataset.m);enviar("modo "+b.dataset.m)}};
 $("marcos").onclick=e=>{const b=e.target.closest("button[data-k]");if(b){pintarMarcos(+b.dataset.k);enviar("marco "+b.dataset.k)}};
 
 // ---------- Galería por Bluetooth ----------
@@ -309,7 +332,7 @@ function revisar(){
 function progreso(a){
   if(a.cab?.tipo==="foto" && grandesPendiente===a.cab.id){
     const pc=Math.round(100*a.cuantos/a.cab.n); $("vBarra").firstChild.style.width=pc+"%";
-    $("vTexto").textContent=pc<100?`Recibiendo la foto por Bluetooth… ${pc}%`:"";
+    $("vTexto").textContent=pc<100?`Recibiendo ${a.cab.id.endsWith(".mp4")?"el boomerang":"la foto"} por Bluetooth… ${pc}%`:"";
   }
 }
 
@@ -326,7 +349,7 @@ async function cargarLista(){
 }
 function pintarRejilla(hasta){
   mostradas=hasta;
-  $("rejilla").innerHTML=fotos.slice(0,mostradas).map((n,i)=>`<button data-i="${i}" class="${minis.has(n)?"":"cargando"}">${minis.has(n)?`<img src="${minis.get(n)}" alt="">`:""}</button>`).join("");
+  $("rejilla").innerHTML=fotos.slice(0,mostradas).map((n,i)=>`<button data-i="${i}" class="${minis.has(n)?"":"cargando"} ${n.endsWith(".mp4")?"video":""}">${minis.has(n)?`<img src="${minis.get(n)}" alt="">`:""}</button>`).join("");
   $("masBox").classList.toggle("oculto",mostradas>=fotos.length);
   fotos.slice(0,mostradas).forEach(n=>{if(!minis.has(n)) pedirMini(n)});
 }
@@ -353,19 +376,27 @@ async function abrirFoto(i){
   $("vCont").textContent=`Foto ${fotos.length-i} de ${fotos.length}`;
   $("vAnt").style.visibility=i>0?"":"hidden"; $("vSig").style.visibility=i<fotos.length-1?"":"hidden";
   resetImp(); $("vTexto").textContent="";
+  const esVideo=n.endsWith(".mp4");
+  $("vImprimir").style.display=esVideo?"none":"";
   if(!$("visor").classList.contains("on")){$("visor").classList.add("on");history.pushState({visor:1},"")}
-  if(grandes.has(n)){$("vImg").src=grandes.get(n).url;$("vBarra").firstChild.style.width="100%";botonesVisor(true);return}
+  if(grandes.has(n)){mostrarGrande(n);$("vBarra").firstChild.style.width="100%";botonesVisor(true);return}
+  $("vVid").style.display="none"; $("vVid").removeAttribute("src"); $("vImg").style.display="";
   $("vImg").src=minis.get(n)||""; $("vBarra").firstChild.style.width="0"; botonesVisor(false);
   grandesPendiente=n; $("vTexto").textContent="Pidiendo la foto…";
   try{
     const r=await pedirDatos("ver "+n,true);
-    const blob=new Blob([r.bytes],{type:"image/jpeg"});
+    const blob=new Blob([r.bytes],{type:n.endsWith(".mp4")?"video/mp4":"image/jpeg"});
     grandes.set(n,{blob,url:URL.createObjectURL(blob)});
-    if(fotos[vIdx]===n){$("vImg").src=grandes.get(n).url;$("vTexto").textContent="";botonesVisor(true)}
+    if(fotos[vIdx]===n){mostrarGrande(n);$("vTexto").textContent="";botonesVisor(true)}
   }catch(e){if(fotos[vIdx]===n)$("vTexto").textContent="⚠️ No se pudo recibir: "+e.message}
 }
+function mostrarGrande(n){
+  const g=grandes.get(n), v=n.endsWith(".mp4");
+  $("vImg").style.display=v?"none":""; $("vVid").style.display=v?"":"none";
+  if(v){$("vVid").src=g.url;$("vVid").play().catch(()=>{})}else{$("vVid").removeAttribute("src");$("vImg").src=g.url}
+}
 function botonesVisor(on){$("vCompartir").disabled=!on;$("vGuardar").disabled=!on}
-function cerrarVisor(){$("visor").classList.remove("on");resetImp();grandesPendiente=null}
+function cerrarVisor(){$("vVid").pause();$("visor").classList.remove("on");resetImp();grandesPendiente=null}
 $("vCerrar").onclick=()=>history.back();
 addEventListener("popstate",cerrarVisor);
 $("vAnt").onclick=()=>abrirFoto(vIdx-1); $("vSig").onclick=()=>abrirFoto(vIdx+1);
@@ -374,7 +405,7 @@ $("vMarco").addEventListener("touchend",e=>{if(x0===null)return;const dx=e.chang
 
 $("vCompartir").onclick=async()=>{
   const n=fotos[vIdx], g=grandes.get(n); if(!g) return;
-  const f=new File([g.blob],"photomaton-mailen-"+n,{type:"image/jpeg"});
+  const f=new File([g.blob],"photomaton-mailen-"+n,{type:g.blob.type});
   try{
     if(navigator.canShare?.({files:[f]})) await navigator.share({files:[f],title:"Cumple de Mailen"});
     else{$("vTexto").textContent="Este navegador no deja compartir: pulsa Guardar y mándala desde la galería"}
