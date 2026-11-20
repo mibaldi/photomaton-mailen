@@ -32,9 +32,14 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
 .aviso{background:#fff3cd;color:#6b4e00;border-radius:12px;padding:12px;font-size:.92rem}
 @media (prefers-color-scheme:dark){.aviso{background:#3b3010;color:#f3dc8b}}
 .oculto{display:none}
+#flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .35s ease-out;z-index:99}
+#flash.on{opacity:1;transition:none}
+.opc{display:flex;align-items:center;gap:10px;font-weight:600}
+.opc input{width:22px;height:22px;accent-color:var(--pri)}
 </style>
 </head>
 <body>
+<div id="flash"></div>
 <main>
   <h1>🎉 Photomatón Mailen</h1>
   <p class="sub">Control por Bluetooth · funciona sin internet</p>
@@ -55,6 +60,11 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
     <button id="bEstado" class="sec" disabled>📊 Actualizar estado</button>
   </div>
 
+  <div class="card">
+    <label class="opc"><input type="checkbox" id="cEfectos" checked> 🔊 Sonido y flash en este móvil al hacer cada foto</label>
+    <p class="sub" style="text-align:left;margin-top:8px;font-size:.88rem">Deja esta página abierta y con la pantalla encendida; suena con el volumen del móvil.</p>
+  </div>
+
   <div class="fila">
     <button id="bReiniciar" class="sec" disabled>🔄 Reiniciar</button>
     <button id="bApagar" class="peligro" disabled>⏻ Apagar</button>
@@ -73,10 +83,12 @@ function conectadoUI(on){
   $("dot").classList.toggle("on",on);
   $("con").textContent=on?"Conectado a "+(dev?.name||"Photomaton"):"Desconectado";
   botones.forEach(b=>$(b).disabled=!on);
+  if(typeof mantenerPantalla==="function") mantenerPantalla(on);
   $("bConectar").textContent=on?"🔌 Desconectar":"🔗 Conectar al photomatón";
 }
 
 async function conectar(){
+  desbloquearAudio();
   if(dev?.gatt?.connected){dev.gatt.disconnect();return}
   try{
     if(!dev){
@@ -101,6 +113,7 @@ async function enviar(t){
 
 function respuesta(txt){
   let d; try{d=JSON.parse(txt)}catch{log(txt);return}
+  if(d.cmd==="click"){efectoFoto();return}
   if(d.cmd==="estado"){
     const filas=[["App",d.app?"✅ OK":"❌ parada"],["Cámara",d.camara?"✅ OK":"❌ no detectada"],["Fotos",d.fotos],
       ["Internet",d.internet?"✅ sí (sube a Drive)":"❌ no (se guardan)"],["Wi-Fi",d.wifi||"—"],["Temperatura",d.temp],["Alimentación",d.alim_ok?"✅ OK":"⚠️ justa"]];
@@ -111,6 +124,34 @@ function respuesta(txt){
     if(d.cmd==="foto_hecha"){$("bFoto").disabled=false; if(navigator.vibrate)navigator.vibrate(80)}
   }
 }
+
+// --- Sonido de obturador + flash en el móvil (aviso "click" de la Pi) ---
+let actx=null, wakeLock=null;
+try{$("cEfectos").checked=localStorage.getItem("efectos")!=="0"}catch{}
+$("cEfectos").onchange=()=>{try{localStorage.setItem("efectos",$("cEfectos").checked?"1":"0")}catch{} desbloquearAudio()};
+function desbloquearAudio(){
+  try{ if(!actx) actx=new (window.AudioContext||window.webkitAudioContext)(); if(actx.state==="suspended") actx.resume(); }catch{}
+}
+function clic(t0,dur,vol,decay){
+  const n=Math.floor(actx.sampleRate*dur), b=actx.createBuffer(1,n,actx.sampleRate), d=b.getChannelData(0);
+  let prev=0; for(let i=0;i<n;i++){prev=.6*prev+.4*(Math.random()*2-1); d[i]=prev*Math.exp(-i/(actx.sampleRate*decay));}
+  const src=actx.createBufferSource(), g=actx.createGain(); g.gain.value=vol;
+  src.buffer=b; src.connect(g).connect(actx.destination); src.start(t0);
+}
+function efectoFoto(){
+  if(!$("cEfectos").checked) return;
+  if(actx){ if(actx.state==="suspended") actx.resume(); const t=actx.currentTime+.01; clic(t,.05,1,.008); clic(t+.12,.09,.9,.02); }
+  const f=$("flash"); f.classList.add("on"); requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(()=>f.classList.remove("on"),120)));
+  if(navigator.vibrate) navigator.vibrate(60);
+}
+async function mantenerPantalla(on){
+  try{
+    if(on && "wakeLock" in navigator && !wakeLock){ wakeLock=await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release",()=>wakeLock=null); }
+    if(!on && wakeLock){ await wakeLock.release(); wakeLock=null; }
+  }catch{}
+}
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible" && dev?.gatt?.connected) mantenerPantalla(true); });
+document.addEventListener("pointerdown",desbloquearAudio);
 
 $("bConectar").onclick=conectar;
 $("bFoto").onclick=()=>{$("bFoto").disabled=true;log("📷 ¡Sonreíd!");enviar("foto");setTimeout(()=>{if(dev?.gatt?.connected)$("bFoto").disabled=false},8000)};
