@@ -5,7 +5,8 @@ import os, re, select, struct, time, urllib.request
 NOMBRES = ("AF15", "SnapStand")
 TECLAS = {114, 115}          # KEY_VOLUMEDOWN, KEY_VOLUMEUP
 ESPERA = 2.0                 # s entre fotos (el SnapStand manda dos teclas por pulsación)
-URL = "http://localhost:8000/api/actions/image/0"
+URL = "http://127.0.0.1:8010/disparar"                 # marcos-servicio: foto con el marco elegido
+URL_RESERVA = "http://localhost:8000/api/actions/image/0"
 EV = struct.Struct("llHHi")
 
 def buscar():
@@ -44,7 +45,11 @@ while True:
             if tipo == 1 and valor == 1 and codigo in TECLAS and time.time() - ultima > ESPERA:
                 ultima = time.time()
                 try:
-                    urllib.request.urlopen(URL, timeout=5).read()
+                    urllib.request.urlopen(urllib.request.Request(URL, data=b"", method="POST"), timeout=10).read()
                     print("foto", flush=True)
                 except Exception as e:
-                    print("error disparando:", e, flush=True)
+                    print("marcos-servicio no responde, disparo sin elegir marco:", e, flush=True)
+                    try:
+                        urllib.request.urlopen(URL_RESERVA, timeout=5).read()
+                    except Exception as e2:
+                        print("error disparando:", e2, flush=True)

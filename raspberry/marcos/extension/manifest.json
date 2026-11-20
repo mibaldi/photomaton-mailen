@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Marcos del photomatón",
+  "version": "1.0",
+  "description": "Dibuja el marco elegido sobre la previsualización y añade flechas para cambiarlo y un botón de disparo.",
+  "content_scripts": [{
+    "matches": ["http://localhost:8000/*", "http://127.0.0.1:8000/*"],
+    "js": ["marcos.js"],
+    "css": ["marcos.css"],
+    "run_at": "document_idle"
+  }],
+  "host_permissions": ["http://127.0.0.1:8010/*"]
+}

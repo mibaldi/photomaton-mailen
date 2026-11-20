@@ -36,6 +36,11 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
 #flash.on{opacity:1;transition:none}
 .opc{display:flex;align-items:center;gap:10px;font-weight:600}
 .opc input{width:22px;height:22px;accent-color:var(--pri)}
+#marcos{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+#marcos button{padding:0;background:none;color:var(--fg);border:3px solid transparent;border-radius:12px;overflow:hidden;font-size:.8rem;font-weight:600}
+#marcos button img{width:100%;aspect-ratio:16/9;display:block;object-fit:cover}
+#marcos button span{display:block;padding:3px 0}
+#marcos button.sel{border-color:var(--pri);background:var(--line)}
 #rejilla{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px}
 #rejilla button{padding:0;border-radius:10px;overflow:hidden;aspect-ratio:16/9;background:var(--line);position:relative}
 #rejilla img{width:100%;height:100%;object-fit:cover;display:block}
@@ -85,6 +90,11 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
   <div id="log"></div>
 
   <div class="card">
+    <div class="estado-con">🖼 Marco de la foto: <span id="marcoNombre" style="font-weight:600">—</span></div>
+    <div id="marcos"></div>
+  </div>
+
+  <div class="card">
     <dl id="estado"><dt>Estado</dt><dd>—</dd></dl>
     <div style="height:10px"></div>
     <button id="bEstado" class="sec" disabled>📊 Actualizar estado</button>
@@ -130,6 +140,7 @@ const SVC="a07498ca-ad5b-474e-940d-16f1fbe7e8cd", CMD="a07498ca-ad5b-474e-940d-1
 let dev=null, cmdChar=null;
 const $=id=>document.getElementById(id);
 const botones=["bFoto","bEstado","bReiniciar","bApagar","bImprimir","cAuto","bWifi","cInvitados","bGaleria"];
+let listaMarcos=[], marcoActual=null;
 const log=t=>$("log").textContent=t;
 
 if(!navigator.bluetooth){$("noble").classList.remove("oculto");$("bConectar").disabled=true}
@@ -139,6 +150,7 @@ function conectadoUI(on){
   $("con").textContent=on?"Conectado a "+(dev?.name||"Photomaton"):"Desconectado";
   botones.forEach(b=>$(b).disabled=!on);
   if(typeof mantenerPantalla==="function") mantenerPantalla(on);
+  if(typeof pintarMarcos==="function") pintarMarcos(marcoActual);
   $("bConectar").textContent=on?"🔌 Desconectar":"🔗 Conectar al photomatón";
 }
 
@@ -174,6 +186,7 @@ function respuesta(txt){
   let d; try{d=JSON.parse(txt)}catch{log(txt);return}
   if(d.cmd==="click"){efectoFoto();return}
   if(d.cmd==="datos"){cabeceraDatos(d);return}
+  if("marco" in d && d.marco!==null) pintarMarcos(d.marco);
   if(d.cmd==="imprimir" && $("visor").classList.contains("on")) $("vTexto").textContent=d.msg;
   if("impresora" in d){
     $("impEstado").textContent=d.impresora+(d.impresas!==undefined?` · ${d.impresas}${d.limite?"/"+d.limite:""} impresas`:"");
@@ -234,6 +247,16 @@ $("cInvitados").onchange=()=>enviar($("cInvitados").checked?"invitados_on":"invi
 $("cAuto").onchange=()=>enviar($("cAuto").checked?"auto_on":"auto_off");
 $("bReiniciar").onclick=()=>{if(confirm("¿Reiniciar el photomatón?"))enviar("reiniciar")};
 $("bApagar").onclick=()=>{if(confirm("¿Seguro que quieres APAGAR el photomatón?"))enviar("apagar")};
+
+// ---------- Marcos ----------
+fetch("marcos/marcos.json").then(r=>r.json()).then(l=>{listaMarcos=l;pintarMarcos(marcoActual)}).catch(()=>{});
+function pintarMarcos(i){
+  marcoActual=i;
+  $("marcoNombre").textContent=listaMarcos[i]?.nombre||"—";
+  const con=!!dev?.gatt?.connected;
+  $("marcos").innerHTML=listaMarcos.map((m,k)=>`<button data-k="${k}" class="${k===i?"sel":""}" ${con?"":"disabled"}><img src="marcos/miniaturas/${m.clave}.jpg" alt=""><span>${m.nombre}</span></button>`).join("");
+}
+$("marcos").onclick=e=>{const b=e.target.closest("button[data-k]");if(b){pintarMarcos(+b.dataset.k);enviar("marco "+b.dataset.k)}};
 
 // ---------- Galería por Bluetooth ----------
 // Cada petición (lista / mini / ver) devuelve una cabecera por RESP y los bytes en trozos por DATA.

@@ -19,7 +19,8 @@ Todos los ficheros mencionados están en esta carpeta (`raspberry/`). Los de imp
 11. [Extras con internet: bot de Telegram y subida a Google Drive](#11-extras-con-internet)
 12. [Impresora Canon SELPHY CP1500](#12-impresora-canon-selphy-cp1500)
 13. [Ver, compartir e imprimir las fotos desde el móvil](#13-ver-compartir-e-imprimir-las-fotos-desde-el-móvil)
-14. [Comprobaciones y problemas conocidos](#14-comprobaciones-y-problemas-conocidos)
+14. [Marcos a elegir](#14-marcos-a-elegir)
+15. [Comprobaciones y problemas conocidos](#15-comprobaciones-y-problemas-conocidos)
 
 En esta guía el usuario de la Pi se llama `admin`. Si usas otro, cambia `/home/admin` y `admin` en los ficheros.
 
@@ -340,7 +341,23 @@ sudo red/crear-wifi-fiesta.sh "Photomaton Mailen" "tu-contraseña"
 - **Wi-Fi de la fiesta**: se enciende sola si al arrancar la Pi no ve ninguna Wi-Fi conocida. Si la fiesta es en casa, enciéndela desde la webapp ("📶 Encender Wi-Fi de la fiesta", órdenes `wifi_fiesta_on` / `wifi_fiesta_off`). Mientras está encendida, la Pi no está en la Wi-Fi de casa.
 - **Cartel con QR**: `impresion-3d/` no lo incluye porque lleva la contraseña; genéralo con un QR `WIFI:T:WPA;S:<nombre>;P:<clave>;;` y otro con `http://10.42.0.1`.
 
-## 14. Comprobaciones y problemas conocidos
+## 14. Marcos a elegir
+
+Seis marcos sin texto (`marcos/png`, generados con `marcos/generar_marcos.py`): **Mailen** (banderines con su nombre y globos), **Confeti**, **Polaroid**, **Película**, **Neón** y **Dorado**. Se cambian con las **flechas ‹ › de los lados de la pantalla** (el marco se ve en directo sobre la cámara) o desde la webapp; la foto sale con el marco elegido, también con los mandos.
+
+- Cada marco es una acción `image` de photobooth-app (la acción N lleva el marco N): `marcos/ajustar_marcos.py` las crea copiando la acción 0 y desactiva el marco fijo de la previsualización.
+- `marcos/marcos-servicio.py` (servicio de usuario `marcos`, 127.0.0.1:8010) guarda el marco elegido en `~/.config/photomaton-marco` y dispara la acción correspondiente (`POST /disparar`). Lo usan la pantalla, `mandos-foto.py` y el servidor BLE (órdenes `marco <n>`, `marco_sig`, `marco_ant`).
+- `marcos/extension/` es una extensión de Chromium que el quiosco carga con `--load-extension=/home/admin/marcos/extension` (y `--disable-features=…,DisableLoadExtensionCommandLineSwitch`): dibuja el marco sobre el `<img>` del stream y añade las flechas y el botón 📷.
+
+```bash
+mkdir -p ~/photobooth-data/userdata/marcos ~/marcos
+cp ../marcos/png/*.png ../marcos/marcos.json ~/photobooth-data/userdata/marcos/
+cp -r marcos/marcos-servicio.py marcos/extension ~/marcos/
+cp systemd/user/marcos.service ~/.config/systemd/user/ && systemctl --user enable --now marcos
+python3 marcos/ajustar_marcos.py && systemctl --user restart photobooth-app
+```
+
+## 15. Comprobaciones y problemas conocidos
 
 ```bash
 systemctl --user is-active photobooth-app mandos-foto photomaton-bot photobooth-drive.timer

@@ -1,0 +1,32 @@
+[
+ {
+  "clave": "mailen",
+  "nombre": "Mailen",
+  "archivo": "mailen.png"
+ },
+ {
+  "clave": "confeti",
+  "nombre": "Confeti",
+  "archivo": "confeti.png"
+ },
+ {
+  "clave": "polaroid",
+  "nombre": "Polaroid",
+  "archivo": "polaroid.png"
+ },
+ {
+  "clave": "pelicula",
+  "nombre": "Película",
+  "archivo": "pelicula.png"
+ },
+ {
+  "clave": "neon",
+  "nombre": "Neón",
+  "archivo": "neon.png"
+ },
+ {
+  "clave": "dorado",
+  "nombre": "Dorado",
+  "archivo": "dorado.png"
+ }
+]

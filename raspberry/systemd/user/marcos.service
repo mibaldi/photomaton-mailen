@@ -1,0 +1,10 @@
+[Unit]
+Description=Eleccion de marco del photomaton (127.0.0.1:8010)
+
+[Service]
+ExecStart=/usr/bin/python3 %h/marcos/marcos-servicio.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

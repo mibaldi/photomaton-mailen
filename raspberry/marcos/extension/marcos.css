@@ -1,0 +1,12 @@
+#pm-marco{position:fixed;pointer-events:none;z-index:2147483000;display:none}
+.pm-ctl{position:fixed;z-index:2147483001;border:0;color:#fff;background:rgba(0,0,0,.35);font:700 64px/1 system-ui,sans-serif;
+  display:none;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.pm-ctl:active{background:rgba(232,69,122,.75)}
+#pm-ant,#pm-sig{top:50%;transform:translateY(-50%);width:96px;height:220px}
+#pm-ant{left:0;border-radius:0 28px 28px 0}
+#pm-sig{right:0;border-radius:28px 0 0 28px}
+#pm-disparo{left:50%;bottom:22px;transform:translateX(-50%);width:132px;height:132px;border-radius:50%;
+  background:rgba(232,69,122,.85);border:7px solid #fff;font-size:60px;box-shadow:0 4px 18px rgba(0,0,0,.4)}
+#pm-nombre{position:fixed;left:50%;top:22px;transform:translateX(-50%);z-index:2147483001;background:rgba(0,0,0,.6);color:#fff;
+  font:700 40px system-ui,sans-serif;padding:10px 26px;border-radius:999px;pointer-events:none;opacity:0;transition:opacity .3s}
+#pm-nombre.on{opacity:1}

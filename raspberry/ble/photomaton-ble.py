@@ -2,6 +2,7 @@
 """Servidor BLE (GATT) del photomatón: recibe órdenes de texto desde la webapp (Web Bluetooth).
 Órdenes: foto | estado | imprimir | auto_on | auto_off | invitados_on | invitados_off | wifi_fiesta_on | wifi_fiesta_off |
 apagar | reiniciar | ping.
+Marcos: marco <n> | marco_sig | marco_ant (los guarda marcos-servicio en 127.0.0.1:8010).
 Galería por BLE: lista | mini <foto> | ver <foto> | trozos <tipo> <foto> <n,n,…> | imprimir <foto>.
   La cabecera {"cmd":"datos",tipo,id,tam,trozo,n} va por RESP y los bytes por la característica DATA,
   en trozos de [2 bytes de número de trozo][datos]. La webapp junta los trozos y pide los que falten. Responde por notificación en la característica RESP.
@@ -17,6 +18,7 @@ DATA_UUID = "a07498ca-ad5b-474e-940d-16f1fbe7e8d0"
 NOMBRE = "Photomaton"
 FOTOS = "/home/admin/photobooth-data/media/processed_full"
 APP = "http://localhost:8000"
+MARCOS = "http://127.0.0.1:8010"
 
 BLUEZ = "org.bluez"
 GATT_MGR = "org.bluez.GattManager1"
@@ -52,6 +54,7 @@ def estado():
         "wifi": sh("nmcli -t -f active,ssid dev wifi | grep ^yes | cut -d: -f2") or None,
         "internet": sh("ping -c1 -W2 8.8.8.8 >/dev/null 2>&1 && echo si") == "si",
         "hotspot": wifi_fiesta(),
+        "marco": marco_actual(),
         **estado_impresora(),
     }
 
@@ -123,6 +126,18 @@ def foto_reducida(nombre, tipo):
             return open(src, "rb").read() if tipo == "foto" else None
         os.replace(dst + ".tmp", dst)
     return open(dst, "rb").read()
+
+
+def marcos_api(ruta, metodo="POST"):
+    req = urllib.request.Request(MARCOS + ruta, data=b"" if metodo == "POST" else None, method=metodo)
+    return json.loads(urllib.request.urlopen(req, timeout=10).read())
+
+
+def marco_actual():
+    try:
+        return marcos_api("/estado", "GET")["actual"]
+    except Exception:
+        return None
 
 
 def como_admin(*args):
@@ -310,7 +325,10 @@ def main():
         elif txt == "foto":
             antes = n_fotos()
             try:
-                urllib.request.urlopen(APP + "/api/actions/image/0", timeout=10).read()
+                try:
+                    marcos_api("/disparar")                     # con el marco elegido
+                except Exception:
+                    urllib.request.urlopen(APP + "/api/actions/image/0", timeout=10).read()
             except Exception as e:
                 responder({"ok": False, "cmd": "foto", "msg": f"No se pudo disparar: {e}"})
                 return
@@ -349,6 +367,13 @@ def main():
             on = wifi_fiesta()
             responder({"ok": on == (txt == "wifi_fiesta_on"), "cmd": "wifi", "hotspot": on,
                        "msg": "📶 Wi-Fi de la fiesta encendida: panel en http://10.42.0.1" if on else "Wi-Fi de la fiesta apagada (vuelve a la Wi-Fi de casa si está cerca)"})
+        elif txt in ("marco_sig", "marco_ant") or re.fullmatch(r"marco \d+", txt):
+            ruta = {"marco_sig": "/siguiente", "marco_ant": "/anterior"}.get(txt) or "/elegir/" + txt.split()[1]
+            try:
+                e = marcos_api(ruta)
+                responder({"ok": True, "cmd": "marco", "marco": e["actual"], "msg": "🖼 Marco: " + e["marcos"][e["actual"]]["nombre"]})
+            except Exception as ex:
+                responder({"ok": False, "cmd": "marco", "msg": f"No se pudo cambiar el marco: {ex}"})
         elif txt == "ping":
             responder({"ok": True, "cmd": "ping", "msg": "pong"})
         else:
