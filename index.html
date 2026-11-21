@@ -204,6 +204,10 @@ async function conectar(){
       dch.addEventListener("characteristicvaluechanged",e=>trozoRecibido(e.target.value));
     }catch(e){console.warn("Sin canal de datos (servidor antiguo)",e)}
     conectadoUI(true); log("¡Listo!");
+    // si el photomatón no contesta al primer "estado", la conexión está rota (p. ej. se reinició su
+    // servidor Bluetooth): se corta para que al volver a conectar se haga limpia
+    const t0=Date.now();
+    setTimeout(()=>{ if(dev?.gatt?.connected && ultimaRespuesta<t0){ log("⚠️ El photomatón no responde. Vuelve a pulsar Conectar."); dev.gatt.disconnect(); } },7000);
     enviar("estado");
   }catch(e){log("No se pudo conectar: "+e.message);conectadoUI(false)}
 }
@@ -212,7 +216,9 @@ async function enviar(t){
   try{await cmdChar.writeValue(new TextEncoder().encode(t))}catch(e){log("Error enviando: "+e.message)}
 }
 
+let ultimaRespuesta=0;
 function respuesta(txt){
+  ultimaRespuesta=Date.now();
   let d; try{d=JSON.parse(txt)}catch{log(txt);return}
   if(d.cmd==="click"){efectoFoto();return}
   if(d.cmd==="datos"){cabeceraDatos(d);return}

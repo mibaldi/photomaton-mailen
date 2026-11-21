@@ -454,7 +454,18 @@ def main():
         else:
             responder({"ok": False, "cmd": txt, "msg": "Orden desconocida"})
 
-    cmd.on_write = lambda txt: threading.Thread(target=ejecutar, args=(txt,), daemon=True).start()
+    def ejecutar_con_registro(txt):
+        if not txt.startswith(("mini ", "trozos ", "ver ")):
+            print("orden:", txt, flush=True)
+        try:
+            ejecutar(txt)
+        except Exception as e:
+            import traceback
+            print("ERROR en la orden", repr(txt), ":", e, flush=True)
+            traceback.print_exc()
+            responder({"ok": False, "cmd": txt.split()[0] if txt else "", "msg": f"Error en el photomatón: {e}"})
+
+    cmd.on_write = lambda txt: threading.Thread(target=ejecutar_con_registro, args=(txt,), daemon=True).start()
 
     # Aviso de "foto en este instante": lo manda ~/bin/foto-efectos.sh (plugin commander) por UDP local.
     # La webapp lo recibe como notificación {"cmd":"click"} y hace sonido + flash en el móvil.
@@ -481,6 +492,19 @@ def main():
     def fallo(e):
         print("Error registrando:", e, flush=True)
         loop.quit()
+
+    # Los móviles (Web Bluetooth, sin emparejar) que siguieran conectados al servidor anterior tienen
+    # guardados los identificadores viejos: sus órdenes se perderían sin error. Se desconectan para
+    # que la webapp se reconecte limpia. Los mandos están emparejados y no se tocan.
+    try:
+        objetos = dbus.Interface(bus.get_object("org.bluez", "/"), OM).GetManagedObjects()
+        for ruta, ifaces in objetos.items():
+            d = ifaces.get("org.bluez.Device1")
+            if d and d.get("Connected") and not d.get("Paired"):
+                print("desconecto móvil con conexión antigua:", d.get("Name", "?"), flush=True)
+                dbus.Interface(bus.get_object("org.bluez", ruta), "org.bluez.Device1").Disconnect()
+    except Exception as e:
+        print("no se pudieron revisar las conexiones antiguas:", e, flush=True)
 
     gatt.RegisterApplication(app.path, {}, reply_handler=lambda: print("GATT registrado", flush=True), error_handler=fallo)
     adv_mgr.RegisterAdvertisement(adv.PATH, {}, reply_handler=lambda: print("Anunciando como", NOMBRE, flush=True), error_handler=fallo)
