@@ -480,3 +480,11 @@ tail -f ~/photobooth-data/log/photobooth_*.log
 **Cuenta atrás con voz**: el plugin commander, en el evento `counting`, ejecuta `foto-efectos.sh cuenta {mediaitem_type}`. El servidor BLE avisa al móvil (`{"cmd":"cuenta","seg":N}`, con la duración leída de `config.json`) y la webapp dice "3, 2, 1… ¡patata!" (audios en `voz/`, generados con la voz Mónica de macOS). Casilla "🗣 Cuenta atrás con voz" en la webapp.
 
 Instalación: copiar `marcos-servicio.py`, la extensión, `foto-efectos.sh` y `photomaton-ble.py`, parar photobooth-app, ejecutar `ajustar_marcos.py`, añadir la tarea `counting` a `plugin_commander.json` (ya está en `photobooth/plugin_commander.json`) y reiniciar photobooth-app, marcos, photomaton-ble y Chromium.
+
+## 22. Cámara en directo en la webapp
+
+Botón "👀 Ver la cámara en directo": la webapp pide imágenes de una en una con la orden BLE `vista` y las muestra a pantalla completa, con el marco y el filtro elegidos encima y botón de disparo.
+
+- En la Pi, `photomaton-ble.py` arranca un lector aparte (Python de photobooth-app, con Pillow) que lee el MJPEG de la cámara y deja la imagen a 320 px en `/dev/shm/photomaton-vista.jpg`, como mucho 5 por segundo. Se para solo a los 6 s sin peticiones.
+- Va por Bluetooth porque una página `https` (GitHub Pages) no puede mostrar la cámara de la Pi por `http`.
+- Rendimiento esperado: 1-3 imágenes por segundo según la conexión. En reposo, avisa y ofrece despertar.

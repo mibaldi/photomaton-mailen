@@ -5,6 +5,7 @@ apagar | reiniciar | ping.
 Marcos y modos: marco <n> | marco_sig | marco_ant | modo <foto|tira|boomerang> | filtro <n> | filtro_sig
   (los guarda marcos-servicio, 127.0.0.1:8010). Notifica {"cmd":"cuenta","seg":N} al empezar cada cuenta atrás.
 Galería por BLE: lista | mini <foto> | ver <foto> | trozos <tipo> <foto> <n,n,…> | imprimir <foto>.
+Cámara en directo: vista (devuelve la imagen actual de la cámara, 320 px, por el mismo sistema de trozos).
   La cabecera {"cmd":"datos",tipo,id,tam,trozo,n} va por RESP y los bytes por la característica DATA,
   en trozos de [2 bytes de número de trozo][datos]. La webapp junta los trozos y pide los que falten. Responde por notificación en la característica RESP.
 Se ejecuta como servicio de sistema (root)."""
@@ -100,6 +101,62 @@ from PIL import Image
 src, dst, lado, q = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
 im = Image.open(src); im.thumbnail((lado, lado)); im.convert("RGB").save(dst, "JPEG", quality=q, optimize=True)
 """
+
+
+# ---------- Cámara en directo por BLE ----------
+# Un proceso aparte (Python de photobooth-app, que trae Pillow) lee el MJPEG de la cámara y deja la imagen
+# reducida en /dev/shm. Solo vive mientras la webapp pide imágenes (se para a los 6 s sin peticiones).
+VISTA = "/dev/shm/photomaton-vista.jpg"
+VISTA_VIVO = "/dev/shm/photomaton-vista.vivo"
+LECTOR_VISTA = r"""import io, os, sys, time, urllib.request
+from PIL import Image
+url, out, vivo = sys.argv[1:4]
+r = urllib.request.urlopen(url, timeout=10)
+buf, ult = bytearray(), 0.0
+while time.time() - os.path.getmtime(vivo) < 6:
+    trozo = r.read(32768)
+    if not trozo:
+        break
+    buf += trozo
+    fin = buf.rfind(b"\xff\xd9")
+    if fin < 0:
+        if len(buf) > 4000000: del buf[:-200000]
+        continue
+    ini = buf.rfind(b"\xff\xd8", 0, fin)
+    jpg = bytes(buf[ini:fin + 2]) if ini >= 0 else None
+    del buf[:fin + 2]
+    if not jpg or time.time() - ult < 0.2:
+        continue
+    ult = time.time()
+    try:
+        im = Image.open(io.BytesIO(jpg)); im.draft("RGB", (320, 180)); im = im.convert("RGB"); im.thumbnail((320, 320))
+        im.save(out + ".tmp", "JPEG", quality=55); os.replace(out + ".tmp", out)
+    except Exception:
+        pass
+"""
+_lector = {"p": None, "enviada": 0.0, "n": 0}
+
+
+def imagen_vista():
+    """Bytes de una imagen de la cámara más nueva que la última enviada (o None si no llega en 4 s)."""
+    with open(VISTA_VIVO, "a"):
+        pass
+    os.utime(VISTA_VIVO)
+    p = _lector["p"]
+    if p is None or p.poll() is not None:
+        _lector["p"] = subprocess.Popen([PY_FOTOS, "-c", LECTOR_VISTA, APP + "/api/aquisition/stream.mjpg", VISTA, VISTA_VIVO],
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    fin = time.time() + 4
+    while time.time() < fin:
+        try:
+            t = os.path.getmtime(VISTA)
+            if t > _lector["enviada"]:
+                _lector["enviada"] = t
+                return open(VISTA, "rb").read()
+        except OSError:
+            pass
+        time.sleep(0.04)
+    return None
 
 
 def lista_fotos():
@@ -480,6 +537,17 @@ def main():
                 responder({"ok": False, "cmd": "datos", "tipo": tipo, "id": partes[1], "msg": "Esa foto no existe"})
             else:
                 enviar_datos(tipo, partes[1], data)
+        elif orden == "vista":
+            if os.path.exists(REPOSO_FLAG):
+                responder({"ok": False, "cmd": "datos", "tipo": "vista", "id": "vista", "reposo": True,
+                           "msg": "😴 El photomatón está en reposo: despiértalo para ver la cámara"})
+                return
+            data = imagen_vista()
+            if data is None:
+                responder({"ok": False, "cmd": "datos", "tipo": "vista", "id": "vista", "msg": "La cámara no da imagen"})
+            else:
+                _lector["n"] += 1
+                enviar_datos("vista", f"v{_lector['n']}", data)
         elif orden == "trozos" and len(partes) == 4:
             if ultimo.get("tipo") == partes[1] and ultimo.get("id") == partes[2]:
                 n = (len(ultimo["data"]) + ultimo["trozo"] - 1) // ultimo["trozo"]
@@ -494,7 +562,7 @@ def main():
             responder({"ok": rc == 0, "cmd": "imprimir", "msg": ("🖨 " if rc == 0 else "⚠️ ") + (out.replace("OK ", "") or "sin respuesta"), **estado_impresora()})
 
     def ejecutar(txt):
-        if txt.split(" ", 1)[0] in ("lista", "mini", "ver", "trozos") or txt.startswith("imprimir "):
+        if txt.split(" ", 1)[0] in ("lista", "mini", "ver", "trozos", "vista") or txt.startswith("imprimir "):
             galeria(txt)
         elif txt == "foto":
             antes = n_fotos()
@@ -609,7 +677,7 @@ def main():
             responder({"ok": False, "cmd": txt, "msg": "Orden desconocida"})
 
     def ejecutar_con_registro(txt):
-        if not txt.startswith(("mini ", "trozos ", "ver ")):
+        if not txt.startswith(("mini ", "trozos ", "ver ", "vista")):
             print("orden:", txt, flush=True)
         try:
             ejecutar(txt)

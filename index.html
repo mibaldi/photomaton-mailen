@@ -71,10 +71,30 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
 #visor .acciones .pri{background:linear-gradient(135deg,var(--pri),var(--pri2))}
 #visor .acciones .seguro{background:var(--ok)}
 #bActualizar{margin-top:10px;padding:12px}
+#camara{position:fixed;inset:0;background:#0d090b;display:none;flex-direction:column;z-index:60;color:#eee}
+#camara.on{display:flex}
+#camara .arriba{display:flex;justify-content:space-between;align-items:center;padding:max(10px,env(safe-area-inset-top)) 12px 6px}
+#camCaja{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;padding:0 8px}
+#camLienzo{position:relative;width:100%;max-height:100%;aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden}
+#camLienzo img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+#camTexto{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;font-weight:600}
+#camInfo{font-size:.85rem;color:#b49aa6}
+#camara .acciones{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px 12px max(14px,env(safe-area-inset-bottom))}
+#camara .acciones button{padding:16px 4px}
+#bVista{margin-top:10px;background:#3a2b32}
 </style>
 </head>
 <body>
 <div id="flash"></div>
+<div id="camara" role="dialog" aria-modal="true">
+  <div class="arriba"><span>👀 Cámara en directo <span id="camInfo"></span></span><button id="camCerrar" aria-label="Cerrar" style="background:none;width:auto;font-size:1.9rem;padding:6px 10px">×</button></div>
+  <div id="camCaja"><div id="camLienzo"><img id="camImg" alt=""><img id="camMarco" alt=""><div id="camTexto">Conectando con la cámara…</div></div></div>
+  <div class="acciones">
+    <button id="camDespertar" class="oculto">⏰ Despertar</button>
+    <button id="camFoto">📷 Hacer foto</button>
+    <button id="camSalir" style="background:#3a2b32">Cerrar</button>
+  </div>
+</div>
 <div id="visor" role="dialog" aria-modal="true">
   <div class="arriba"><span id="vCont"></span><button id="vCerrar" aria-label="Cerrar">×</button></div>
   <div id="vMarco"><img id="vImg" alt="Foto del photomatón"><video id="vVid" autoplay loop muted playsinline></video><button class="flecha" id="vAnt" aria-label="Anterior">‹</button><button class="flecha" id="vSig" aria-label="Siguiente">›</button></div>
@@ -109,6 +129,7 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
     <p id="pinMsg" class="sub" style="text-align:left;margin:8px 0 0;font-size:.88rem">Solo quien sepa el PIN puede manejar el photomatón desde el móvil.</p>
   </div>
   <button id="bFoto" class="foto" disabled>📷 Hacer foto</button>
+  <button id="bVista" disabled>👀 Ver la cámara en directo</button>
   <div id="log"></div>
 
   <div class="card">
@@ -209,7 +230,7 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
 const SVC="a07498ca-ad5b-474e-940d-16f1fbe7e8cd", CMD="a07498ca-ad5b-474e-940d-16f1fbe7e8ce", RESP="a07498ca-ad5b-474e-940d-16f1fbe7e8cf", DATA="a07498ca-ad5b-474e-940d-16f1fbe7e8d0";
 let dev=null, cmdChar=null;
 const $=id=>document.getElementById(id);
-const botones=["bFoto","bEstado","bReiniciar","bApagar","bImprimir","cAuto","bWifi","cInvitados","bGaleria","cGestos","bReposo","sReposo","bComprobar","bFiesta","bPinNuevo"];
+const botones=["bVista","bFoto","bEstado","bReiniciar","bApagar","bImprimir","cAuto","bWifi","cInvitados","bGaleria","cGestos","bReposo","sReposo","bComprobar","bFiesta","bPinNuevo"];
 let listaMarcos=[], marcoActual=null, modoActual="foto", filtroActual=0;
 const TXT_DISPARO={foto:"📷 Hacer foto",tira:"🎞 Hacer tira de 4 fotos",boomerang:"🔁 Hacer boomerang"};
 const log=t=>$("log").textContent=t;
@@ -390,20 +411,20 @@ $("bApagar").onclick=()=>{if(confirm("¿Seguro que quieres APAGAR el photomatón
 // ---------- Marcos ----------
 fetch("marcos/marcos.json").then(r=>r.json()).then(l=>{listaMarcos=l;pintarMarcos(marcoActual)}).catch(()=>{});
 function pintarMarcos(i){
-  marcoActual=i;
+  marcoActual=i; if(vistaAbierta) pintarVistaExtras();
   $("marcoNombre").textContent=listaMarcos[i]?.nombre||"—";
   const con=!!dev?.gatt?.connected;
   $("marcos").innerHTML=listaMarcos.map((m,k)=>`<button data-k="${k}" class="${k===i?"sel":""}" ${con?"":"disabled"}><img src="marcos/miniaturas/${m.clave}.jpg" alt=""><span>${m.nombre}</span></button>`).join("");
 }
 function pintarModo(m){
-  modoActual=m;
+  modoActual=m; if(vistaAbierta) pintarVistaExtras();
   document.querySelectorAll("#modos button").forEach(b=>{b.classList.toggle("sel",b.dataset.m===m);b.disabled=!dev?.gatt?.connected});
   $("marcos").classList.toggle("apagado",m!=="foto");
   $("filtros").classList.toggle("apagado",m==="boomerang");
   if(!$("bFoto").disabled||!dev?.gatt?.connected) $("bFoto").textContent=TXT_DISPARO[m]||TXT_DISPARO.foto;
 }
 function pintarFiltro(f){
-  filtroActual=f;
+  filtroActual=f; if(vistaAbierta) pintarVistaExtras();
   document.querySelectorAll("#filtros button").forEach(b=>{b.classList.toggle("sel",+b.dataset.f===f);b.disabled=!dev?.gatt?.connected});
 }
 $("filtros").onclick=e=>{const b=e.target.closest("button[data-f]");if(b){pintarFiltro(+b.dataset.f);enviar("filtro "+b.dataset.f)}};
@@ -438,7 +459,7 @@ function siguienteDatos(){
 function vigilar(ms){clearTimeout(actualDatos?._t); if(actualDatos) actualDatos._t=setTimeout(revisar,ms)}
 function cabeceraDatos(d){
   const a=actualDatos; if(!a) return;
-  if(!d.ok){clearTimeout(a._t);actualDatos=null;a.ko(new Error(d.msg||"error"));siguienteDatos();return}
+  if(!d.ok){clearTimeout(a._t);actualDatos=null;a.ko(Object.assign(new Error(d.msg||"error"),{datos:d}));siguienteDatos();return}
   a.cab=d; a.buf=new Uint8Array(d.tam); a.tengo=new Uint8Array(d.n); a.cuantos=0; vigilar(3000);
   progreso(a);
 }
@@ -494,6 +515,55 @@ async function pedirMini(n){
     if(fotos[vIdx]===n && !grandes.has(n)) $("vImg").src=minis.get(n);
   }catch{}finally{pidiendoMini.delete(n)}
 }
+// ---------- Cámara en directo por Bluetooth ----------
+// Pide imágenes pequeñas de una en una mientras la vista está abierta (unas pocas por segundo).
+const CSS_FILTRO=["","grayscale(1) contrast(1.1)","sepia(.35) saturate(1.3) contrast(.92) brightness(1.06)"];
+let vistaAbierta=false, urlVista=null, tiemposVista=[];
+function pintarVistaExtras(){
+  const m=listaMarcos[marcoActual];
+  const conMarco=modoActual==="foto"&&m;
+  $("camMarco").style.display=conMarco?"":"none";
+  if(conMarco) $("camMarco").src="marcos/png/"+m.archivo;
+  const f=modoActual==="boomerang"?"":(CSS_FILTRO[filtroActual]||(conMarco&&m.filtro?"grayscale(1)":""));
+  $("camImg").style.filter=f;
+  $("camFoto").textContent=TXT_DISPARO[modoActual]||TXT_DISPARO.foto;
+}
+async function bucleVista(){
+  while(vistaAbierta&&dev?.gatt?.connected){
+    try{
+      const r=await pedirDatos("vista",true);
+      if(!vistaAbierta) break;
+      const u=URL.createObjectURL(new Blob([r.bytes],{type:"image/jpeg"}));
+      $("camImg").src=u; if(urlVista) URL.revokeObjectURL(urlVista); urlVista=u;
+      $("camTexto").textContent=""; $("camDespertar").classList.add("oculto");
+      const ahora=performance.now(); tiemposVista.push(ahora); tiemposVista=tiemposVista.filter(t=>ahora-t<3000);
+      $("camInfo").textContent=`· ${(tiemposVista.length/3).toFixed(1)} img/s`;
+    }catch(e){
+      if(!vistaAbierta) break;
+      const reposo=e.datos?.reposo;
+      $("camTexto").textContent=(reposo?"":"⚠️ ")+e.message; $("camDespertar").classList.toggle("oculto",!reposo);
+      await new Promise(ok=>setTimeout(ok,reposo?2500:1500));
+    }
+  }
+}
+function abrirVista(){
+  if(vistaAbierta||!dev?.gatt?.connected) return;
+  vistaAbierta=true; tiemposVista=[]; $("camInfo").textContent=""; $("camTexto").textContent="Conectando con la cámara…";
+  $("camImg").removeAttribute("src"); pintarVistaExtras();
+  $("camara").classList.add("on"); history.pushState({camara:1},"");
+  bucleVista();
+}
+function cerrarVista(){
+  if(!vistaAbierta) return;
+  vistaAbierta=false; $("camara").classList.remove("on");
+  colaDatos.filter(p=>p.orden==="vista").forEach(p=>{colaDatos.splice(colaDatos.indexOf(p),1);p.ko(new Error("cerrada"))});
+}
+$("bVista").onclick=abrirVista;
+$("camCerrar").onclick=$("camSalir").onclick=()=>history.back();
+addEventListener("popstate",()=>{if(vistaAbierta)cerrarVista()});
+$("camFoto").onclick=()=>{enviar("foto");$("camFoto").disabled=true;setTimeout(()=>$("camFoto").disabled=false,4000)};
+$("camDespertar").onclick=()=>{enviar("despertar");$("camTexto").textContent="⏰ Despertando…"};
+
 $("bGaleria").onclick=()=>{galeriaAbierta=true;$("bGaleria").textContent="🔄 Actualizar fotos";cargarLista()};
 $("bMas").onclick=mostrarMas;
 $("rejilla").onclick=e=>{const b=e.target.closest("button[data-i]");if(b)abrirFoto(+b.dataset.i)};
@@ -552,7 +622,7 @@ $("vImprimir").onclick=()=>{
 };
 
 // Versión: sube VERSION y version.json a la vez al publicar cambios
-const VERSION=15;
+const VERSION=16;
 $("ver").textContent="v"+VERSION;
 async function comprobarVersion(){
   try{
