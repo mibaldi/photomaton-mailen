@@ -1,6 +1,5 @@
 [Unit]
 Description=photobooth-app
-After=default.target
 
 [Service]
 Type=simple
