@@ -14,6 +14,15 @@
   const nombre = el("div", "pm-nombre");
   const bModo = el("button", "pm-modo"), pista = el("div", "pm-pista");
   [ant, sig, disparo, bModo].forEach(b => b.classList.add("pm-ctl"));
+  // Al arrancar Chromium a veces ejecuta este script sin aplicar marcos.css (carrera del arranque):
+  // si los estilos no están, los cargamos a mano
+  function asegurarEstilos() {
+    if (getComputedStyle(marco).position === "fixed" || document.getElementById("pm-estilos")) return;
+    const l = document.createElement("link");
+    l.id = "pm-estilos"; l.rel = "stylesheet"; l.href = chrome.runtime.getURL("marcos.css");
+    document.head.appendChild(l);
+  }
+  asegurarEstilos(); setTimeout(asegurarEstilos, 2000);
 
   async function llamar(ruta, metodo = "POST") {
     const r = await fetch(API + ruta, { method: metodo, cache: "no-store" });

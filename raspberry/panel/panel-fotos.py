@@ -7,6 +7,9 @@ Cada foto se puede ver, guardar, compartir (WhatsApp…) e imprimir en la SELPHY
   GET  /mini/<foto>      miniatura (se genera y se guarda en caché)
   GET  /foto/<foto>      foto completa (?descargar=1 para forzar descarga)
   POST /api/imprimir     {"foto": "<nombre>"} -> la manda a la cola de impresión
+  GET  /pase             pase de fotos a pantalla completa para una tele/tablet/portátil (pase.html)
+  GET  /api/pase         fotos y boomerangs (mp4), el más nuevo primero
+  GET  /video/<video>    boomerang mp4 (admite Range, que piden los navegadores de las teles)
 
 Se ejecuta con el Python de photobooth-app (trae Pillow) como usuario admin, en el puerto 80."""
 import fnmatch, json, os, re, subprocess, threading, time
@@ -18,10 +21,12 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 FOTOS = os.environ.get("PANEL_FOTOS", "/home/admin/photobooth-data/media/processed_full")
 CACHE = os.environ.get("PANEL_CACHE", "/home/admin/photobooth-data/panel-cache")
 EXCLUIR = "/home/admin/.config/rclone/excluir_pruebas.txt"   # las fotos de prueba no salen en el panel
+# los *_hidden.jpg son las 4 fotos sueltas con las que photobooth-app monta la tira: tampoco salen
 IMPR_CFG = os.environ.get("PANEL_IMPR_CFG", "/home/admin/.config/photomaton-impresion")
 IMPRIMIR = os.environ.get("PANEL_IMPRIMIR", "/home/admin/bin/imprimir-foto.sh")
 ESPERA_POR_MOVIL = 20          # s mínimos entre impresiones desde el mismo móvil
 NOMBRE_OK = re.compile(r"^[\w.-]+\.jpg$")
+VIDEO_OK = re.compile(r"^[\w.-]+\.mp4$")
 
 os.makedirs(CACHE, exist_ok=True)
 ultima_impresion = {}
@@ -35,11 +40,11 @@ def patrones_excluidos():
         return []
 
 
-def lista_fotos():
+def lista_fotos(videos=False):
     excl = patrones_excluidos()
     fotos = []
     for n in os.listdir(FOTOS):
-        if NOMBRE_OK.match(n) and not any(fnmatch.fnmatch(n, p) for p in excl):
+        if (NOMBRE_OK.match(n) or (videos and VIDEO_OK.match(n))) and "_hidden" not in n and not any(fnmatch.fnmatch(n, p) for p in excl):
             fotos.append((os.path.getmtime(os.path.join(FOTOS, n)), n))
     return [n for _, n in sorted(fotos, reverse=True)]
 
@@ -91,6 +96,37 @@ class Panel(BaseHTTPRequestHandler):
         with open(ruta, "rb") as f:
             self.enviar(200, f.read(), tipo, extra)
 
+    def video(self, ruta):
+        tam = os.path.getsize(ruta)
+        ini, fin = 0, tam - 1
+        m = re.match(r"bytes=(\d*)-(\d*)", self.headers.get("Range", ""))
+        if m and (m.group(1) or m.group(2)):
+            if m.group(1):
+                ini = int(m.group(1)); fin = int(m.group(2)) if m.group(2) else fin
+            else:
+                ini = max(0, tam - int(m.group(2)))
+            fin = min(fin, tam - 1)
+            self.send_response(206)
+            self.send_header("Content-Range", f"bytes {ini}-{fin}/{tam}")
+        else:
+            self.send_response(200)
+        self.send_header("Content-Type", "video/mp4")
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(fin - ini + 1))
+        self.send_header("Cache-Control", "max-age=86400")
+        self.end_headers()
+        if self.command == "HEAD":
+            return
+        with open(ruta, "rb") as f:
+            f.seek(ini)
+            falta = fin - ini + 1
+            while falta > 0:
+                trozo = f.read(min(65536, falta))
+                if not trozo:
+                    break
+                self.wfile.write(trozo)
+                falta -= len(trozo)
+
     def do_HEAD(self):
         self.do_GET()
 
@@ -99,6 +135,16 @@ class Panel(BaseHTTPRequestHandler):
         p = url.path
         if p in ("/", "/index.html"):
             return self.fichero(os.path.join(BASE, "index.html"), "text/html; charset=utf-8", {"Cache-Control": "no-cache"})
+        if p == "/pase":
+            return self.fichero(os.path.join(BASE, "pase.html"), "text/html; charset=utf-8", {"Cache-Control": "no-cache"})
+        if p == "/api/pase":
+            return self.enviar(200, {"items": lista_fotos(videos=True)}, extra={"Cache-Control": "no-store"})
+        if p.startswith("/video/"):
+            n = p[len("/video/"):]
+            r = os.path.join(FOTOS, n)
+            if not VIDEO_OK.match(n) or not os.path.isfile(r):
+                return self.enviar(404, {"error": "no existe"})
+            return self.video(r)
         if p == "/api/fotos":
             return self.enviar(200, {"fotos": lista_fotos(), "imprimir": invitados_pueden_imprimir()}, extra={"Cache-Control": "no-store"})
         for pref in ("/mini/", "/foto/"):

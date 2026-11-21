@@ -20,7 +20,9 @@ Todos los ficheros mencionados están en esta carpeta (`raspberry/`). Los de imp
 12. [Impresora Canon SELPHY CP1500](#12-impresora-canon-selphy-cp1500)
 13. [Ver, compartir e imprimir las fotos desde el móvil](#13-ver-compartir-e-imprimir-las-fotos-desde-el-móvil)
 14. [Marcos y modos (foto, tira de 4, boomerang)](#14-marcos-y-modos)
-15. [Comprobaciones y problemas conocidos](#15-comprobaciones-y-problemas-conocidos)
+15. [Que se arregle solo (vigilante)](#15-que-se-arregle-solo)
+16. [Pase de fotos en una tele](#16-pase-de-fotos-en-una-tele)
+17. [Comprobaciones y problemas conocidos](#15-comprobaciones-y-problemas-conocidos)
 
 En esta guía el usuario de la Pi se llama `admin`. Si usas otro, cambia `/home/admin` y `admin` en los ficheros.
 
@@ -353,7 +355,7 @@ Siete marcos sin texto (`marcos/png`, generados con `marcos/generar_marcos.py`):
 
 - Cada marco es una acción `image` de photobooth-app (la acción N lleva el marco N); la tira es `collage/0` y el boomerang `video/0`. `marcos/ajustar_marcos.py` lo crea todo copiando la acción 0, desactiva el marco fijo de la previsualización y añade `collage` a la impresión automática.
 - `marcos/marcos-servicio.py` (servicio de usuario `marcos`, 127.0.0.1:8010) guarda el marco elegido en `~/.config/photomaton-marco` y el modo en `~/.config/photomaton-marco-modo`, y dispara la acción correspondiente (`POST /disparar`). Lo usan la pantalla, `mandos-foto.py` y el servidor BLE (órdenes `marco <n>`, `marco_sig`, `marco_ant`, `modo <foto|tira|boomerang>`).
-- `marcos/extension/` es una extensión de Chromium que el quiosco carga con `--load-extension=/home/admin/marcos/extension` (y `--disable-features=…,DisableLoadExtensionCommandLineSwitch`): dibuja el marco sobre el `<img>` del stream y añade las flechas y el botón 📷.
+- `marcos/extension/` es una extensión de Chromium que el quiosco carga con `--load-extension=/home/admin/marcos/extension` (y `--disable-features=…,DisableLoadExtensionCommandLineSwitch`): dibuja el marco sobre el `<canvas>` de la previsualización (`.canvas-stack canvas` en photobooth-app 9) y añade las flechas y el botón 📷.
 
 ```bash
 mkdir -p ~/photobooth-data/userdata/marcos ~/marcos
@@ -363,7 +365,38 @@ cp systemd/user/marcos.service ~/.config/systemd/user/ && systemctl --user enabl
 python3 marcos/ajustar_marcos.py && systemctl --user restart photobooth-app
 ```
 
-## 15. Comprobaciones y problemas conocidos
+El texto de bienvenida de la pantalla de inicio se quita con `uisettings.FRONTPAGE_TEXT = ""` en `config.json`, para que no tape los marcos.
+
+## 15. Que se arregle solo
+
+- **Quiosco**: `kiosko/photobooth-kiosk.sh` abre Chromium en bucle; si se cierra o se mata, se vuelve a abrir en 2 s (y quita el aviso de "no se cerró correctamente"). Abre `--remote-debugging-port=9222`, que solo escucha en 127.0.0.1.
+- **Vigilante** (`bin/vigilante.py`, servicio de usuario `vigilante`, con el Python de photobooth-app porque usa `websockets`): cada 10 s comprueba
+  - que photobooth-app responde (4 fallos seguidos → reinicia `photobooth-app`),
+  - que la cámara manda imagen por el stream (6 fallos → reinicia `photobooth-app`),
+  - que la página del quiosco responde por el puerto de depuración (4 fallos → cierra Chromium, y si no se cierra lo fuerza con `SIGKILL`; el bucle del quiosco lo vuelve a abrir), y que no se ha ido a otra web.
+  Deja 2 min de margen tras arrancar o reiniciar algo. Registro en `~/photobooth-data/log/vigilante.log`.
+- Todos los servicios tienen `Restart=always`, y el watchdog de hardware de la Pi (`RuntimeWatchdogSec`, 1 min por defecto en Raspberry Pi OS) reinicia la Pi si el sistema entero se cuelga.
+
+```bash
+install -m 755 kiosko/photobooth-kiosk.sh ~/photobooth-kiosk.sh
+install -m 755 bin/vigilante.py ~/bin/vigilante.py
+cp systemd/user/vigilante.service ~/.config/systemd/user/ && systemctl --user enable --now vigilante
+```
+
+Probado congelando Chromium (`pkill -STOP -x chromium`): vuelve en menos de 1 min. Congelando photobooth-app: se reinicia en ~70 s.
+
+## 16. Pase de fotos en una tele
+
+La Pi no puede sacar el pase por su HDMI: con la pantalla MHS35 el HDMI está forzado a 480x320 (lo que pinta la pantallita), y cambiarlo rompería la pantalla. En su lugar, el panel de la Wi-Fi de la fiesta (sección 13) sirve un **pase de fotos a pantalla completa** en `http://10.42.0.1/pase`:
+
+- Cualquier aparato conectado a la Wi-Fi del photomatón lo abre: el navegador de una smart TV, una tablet o un portátil enchufado a la tele por HDMI.
+- Las fotos nuevas salen al momento con la etiqueta "¡Nueva!"; si no hay nuevas, va pasando todas al azar (7 s cada foto, los boomerangs se reproducen en bucle). Se actualiza solo cada 5 s.
+- Al tocar la pantalla se pone a pantalla completa.
+- No salen las fotos de prueba ni las 4 fotos sueltas de cada tira (`*_hidden.jpg`).
+
+La Wi-Fi de la fiesta (`red/crear-wifi-fiesta.sh`) se enciende sola si al arrancar la Pi no encuentra ninguna Wi-Fi conocida, o a mano desde la webapp. En casa también funciona en `http://<ip-de-la-pi>/pase`.
+
+## 17. Comprobaciones y problemas conocidos
 
 ```bash
 systemctl --user is-active photobooth-app mandos-foto photomaton-bot photobooth-drive.timer

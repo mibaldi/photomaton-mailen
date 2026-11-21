@@ -104,7 +104,7 @@ def lista_fotos():
     except OSError:
         excl = []
     fotos = [(os.path.getmtime(f), os.path.basename(f)) for f in glob.glob(os.path.join(FOTOS, "*.jpg")) + glob.glob(os.path.join(FOTOS, "*.mp4"))]
-    return [n for _, n in sorted(fotos, reverse=True) if NOMBRE_OK.match(n) and not any(fnmatch.fnmatch(n, p) for p in excl)]
+    return [n for _, n in sorted(fotos, reverse=True) if NOMBRE_OK.match(n) and "_hidden" not in n and not any(fnmatch.fnmatch(n, p) for p in excl)]
 
 
 def ruta_foto(nombre):

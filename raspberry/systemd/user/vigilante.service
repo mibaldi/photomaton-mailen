@@ -1,0 +1,11 @@
+[Unit]
+Description=Vigilante del photomatón (reinicia la app, la cámara o la pantalla si se cuelgan)
+After=photobooth-app.service
+
+[Service]
+ExecStart=%h/.local/share/pipx/venvs/photobooth-app/bin/python %h/bin/vigilante.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

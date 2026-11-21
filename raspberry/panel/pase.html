@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pase de fotos · Photomatón</title>
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden;cursor:none;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.capa{position:absolute;top:0;left:0;width:100%;height:100%;z-index:0;overflow:hidden;opacity:0;transition:opacity 1.2s ease;display:flex;align-items:center;justify-content:center}
+.capa.on{opacity:1}
+.capa img,.capa video{width:100%;height:100%;object-fit:contain;display:block}
+.fondo{position:absolute;top:-5%;left:-5%;width:110%;height:110%;object-fit:cover;filter:blur(30px) brightness(.45);z-index:-1}
+#nueva{position:absolute;top:4vh;left:4vw;background:#e8457a;color:#fff;font-weight:800;font-size:3.2vh;padding:1vh 2.2vh;border-radius:99px;box-shadow:0 .5vh 2vh rgba(0,0,0,.5);opacity:0;transform:scale(.8);transition:all .4s}
+#nueva.on{opacity:1;transform:scale(1)}
+#pie{position:absolute;bottom:3vh;left:0;right:0;text-align:center;color:#fff;font-size:3vh;font-weight:700;text-shadow:0 .3vh 1vh #000;opacity:.9}
+#vacio{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:5vh;font-weight:800;text-align:center;padding:0 5vw;box-sizing:border-box}
+#toca{position:absolute;bottom:10vh;left:50%;transform:translateX(-50%);background:rgba(255,255,255,.15);color:#fff;padding:1.2vh 2.4vh;border-radius:1.5vh;font-size:2.2vh;transition:opacity 1s}
+</style>
+</head>
+<body>
+<div id="vacio">📸 Aquí irán saliendo las fotos del photomatón</div>
+<div class="capa" id="c0"></div>
+<div class="capa" id="c1"></div>
+<div id="nueva">✨ ¡Nueva!</div>
+<div id="pie">📸 ¡Hazte una foto en el photomatón!</div>
+<div id="toca">Toca la pantalla para verlo a pantalla completa</div>
+<script>
+var POR_FOTO = 7000, POR_VIDEO = 9000, REFRESCO = 5000;
+var todos = [], conocidos = null, pendientesNuevos = [], mazo = [], capa = 0, temporizador = null;
+
+function barajar(a){a=a.slice();for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=a[i];a[i]=a[j];a[j]=t}return a}
+function esVideo(n){return /\.mp4$/i.test(n)}
+
+function pedirLista(){
+  var x = new XMLHttpRequest();
+  x.open("GET","/api/pase",true);
+  x.onload = function(){
+    try{
+      var items = JSON.parse(x.responseText).items || [];
+      if(conocidos){
+        for(var i=items.length-1;i>=0;i--){ if(!conocidos[items[i]]) pendientesNuevos.push(items[i]); }
+      }
+      conocidos = {}; for(var k=0;k<items.length;k++) conocidos[items[k]] = 1;
+      var habia = todos.length; todos = items;
+      document.getElementById("vacio").style.display = todos.length ? "none" : "flex";
+      if(!habia && todos.length) siguiente();
+      else if(pendientesNuevos.length && !mostrandoNueva) { clearTimeout(temporizador); siguiente(); }
+    }catch(e){}
+  };
+  x.send();
+}
+
+var mostrandoNueva = false;
+function siguiente(){
+  clearTimeout(temporizador);
+  if(!todos.length) return;
+  var n, nueva = false;
+  if(pendientesNuevos.length){ n = pendientesNuevos.shift(); nueva = true; }
+  else{
+    if(!mazo.length) mazo = barajar(todos);
+    n = mazo.shift();
+    if(!conocidos[n]) return siguiente();
+  }
+  mostrar(n, nueva);
+}
+
+function mostrar(n, nueva){
+  var dest = document.getElementById("c" + (1 - capa));
+  var ant = document.getElementById("c" + capa);
+  dest.innerHTML = "";
+  var listo = function(){
+    dest.className = "capa on"; ant.className = "capa";
+    setTimeout(function(){ var v = ant.querySelector("video"); if(v){ v.pause(); } ant.innerHTML=""; }, 1300);
+    capa = 1 - capa;
+    mostrandoNueva = nueva;
+    document.getElementById("nueva").className = nueva ? "on" : "";
+    temporizador = setTimeout(siguiente, esVideo(n) ? POR_VIDEO : (nueva ? POR_FOTO + 3000 : POR_FOTO));
+  };
+  if(esVideo(n)){
+    var v = document.createElement("video");
+    v.src = "/video/" + n; v.muted = true; v.loop = true; v.autoplay = true; v.setAttribute("playsinline","");
+    var hecho = false;
+    v.oncanplay = function(){ if(hecho) return; hecho = true; v.play(); listo(); };
+    v.onerror = function(){ if(!hecho){ hecho = true; siguiente(); } };
+    dest.appendChild(v);
+  }else{
+    var f = document.createElement("img"), i = document.createElement("img");
+    f.className = "fondo"; f.src = "/mini/" + n;
+    i.onload = listo; i.onerror = function(){ siguiente(); };
+    i.src = "/foto/" + n;
+    dest.appendChild(f); dest.appendChild(i);
+  }
+}
+
+document.body.onclick = function(){
+  var d = document.documentElement, f = d.requestFullscreen || d.webkitRequestFullscreen;
+  if(f) try{ f.call(d); }catch(e){}
+  document.getElementById("toca").style.opacity = 0;
+};
+setTimeout(function(){ document.getElementById("toca").style.opacity = 0; }, 15000);
+pedirLista(); setInterval(pedirLista, REFRESCO);
+</script>
+</body>
+</html>
