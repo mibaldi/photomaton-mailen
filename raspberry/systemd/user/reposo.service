@@ -1,0 +1,11 @@
+[Unit]
+Description=Reposo del photomatón (pantalla en negro y cámara parada si no se usa)
+After=photobooth-app.service
+
+[Service]
+ExecStart=%h/.local/share/pipx/venvs/photobooth-app/bin/python %h/bin/reposo.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

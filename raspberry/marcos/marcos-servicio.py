@@ -18,6 +18,15 @@ APP = os.environ.get("MARCOS_APP", "http://localhost:8000")
 PUERTO = int(os.environ.get("MARCOS_PUERTO", "8010"))
 MODOS = ["foto", "tira", "boomerang"]
 ACCION = {"tira": "collage/0", "boomerang": "video/0"}
+REPOSO = "http://127.0.0.1:8012"
+REPOSO_FLAG = os.path.expanduser("~/.config/photomaton-reposo")
+
+
+def avisar_reposo(ruta):
+    try:
+        urllib.request.urlopen(urllib.request.Request(REPOSO + ruta, method="POST"), timeout=2).read()
+    except Exception:
+        pass
 
 
 def modo():
@@ -92,6 +101,11 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         p = self.path
+        if p == "/disparar" and os.path.exists(REPOSO_FLAG):
+            # en reposo, el primer disparo (mando, webapp, pantalla) solo despierta el photomatón
+            avisar_reposo("/despertar?disparo")
+            return self.resp(200, {"ok": True, "despertando": True, "modo": modo(), "marco": actual()})
+        avisar_reposo("/actividad")
         m = re.fullmatch(r"/elegir/(\d+)", p)
         if m:
             elegir(int(m.group(1)))

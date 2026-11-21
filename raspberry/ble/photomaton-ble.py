@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Servidor BLE (GATT) del photomatón: recibe órdenes de texto desde la webapp (Web Bluetooth).
-Órdenes: foto | estado | imprimir | auto_on | auto_off | invitados_on | invitados_off | gestos_on | gestos_off | wifi_fiesta_on | wifi_fiesta_off |
+Órdenes: foto | estado | imprimir | auto_on | auto_off | invitados_on | invitados_off | gestos_on | gestos_off | dormir | despertar | reposo <min> | wifi_fiesta_on | wifi_fiesta_off |
 apagar | reiniciar | ping.
 Marcos y modos: marco <n> | marco_sig | marco_ant | modo <foto|tira|boomerang> (los guarda marcos-servicio, 127.0.0.1:8010).
 Galería por BLE: lista | mini <foto> | ver <foto> | trozos <tipo> <foto> <n,n,…> | imprimir <foto>.
@@ -55,6 +55,7 @@ def estado():
         "internet": sh("ping -c1 -W2 8.8.8.8 >/dev/null 2>&1 && echo si") == "si",
         "hotspot": wifi_fiesta(),
         "gestos": gestos_activo(),
+        **reposo_api("/estado", "GET"),
         **marco_y_modo(),
         **estado_impresora(),
     }
@@ -158,6 +159,20 @@ def marco_y_modo():
         return {"marco": e["actual"], "modo": e["modo"]}
     except Exception:
         return {"marco": None, "modo": None}
+
+
+REPOSO = "http://127.0.0.1:8012"
+REPOSO_FLAG = "/home/admin/.config/photomaton-reposo"
+
+
+def reposo_api(ruta, metodo="POST"):
+    try:
+        req = urllib.request.Request(REPOSO + ruta, data=b"" if metodo == "POST" else None, method=metodo)
+        with urllib.request.urlopen(req, timeout=8) as r:
+            e = json.load(r)
+        return {"reposo": e.get("reposo"), "reposo_min": e.get("minutos")}
+    except Exception:
+        return {"reposo": None, "reposo_min": None}
 
 
 GESTOS = "http://127.0.0.1:8011"
@@ -358,6 +373,10 @@ def main():
             galeria(txt)
         elif txt == "foto":
             antes = n_fotos()
+            if os.path.exists(REPOSO_FLAG):
+                # desde el móvil sí se quiere la foto: despierta, deja que la cámara coja luz y dispara
+                responder({"ok": True, "cmd": "reposo", "msg": "😴 Despertando el photomatón…", **reposo_api("/despertar?webapp")})
+                threading.Event().wait(4)
             try:
                 try:
                     marcos_api("/disparar")                     # con el marco elegido
@@ -392,6 +411,16 @@ def main():
             como_admin("mkdir", "-p", IMPR_CFG)
             como_admin("rm" if txt == "invitados_on" else "touch", "-f" if txt == "invitados_on" else "--", os.path.join(IMPR_CFG, "invitados_no"))
             responder({"ok": True, "cmd": "invitados", "msg": "Los invitados " + ("pueden" if txt == "invitados_on" else "ya no pueden") + " imprimir desde el panel", **estado_impresora()})
+        elif txt in ("dormir", "despertar") or re.fullmatch(r"reposo \d+", txt):
+            if txt == "dormir":
+                e = reposo_api("/dormir"); msg = "😴 Photomatón en reposo: se despierta tocando la pantalla"
+            elif txt == "despertar":
+                e = reposo_api("/despertar?webapp"); msg = "☀️ Photomatón despierto"
+            else:
+                n = int(txt.split()[1]); e = reposo_api(f"/minutos/{n}")
+                msg = f"😴 Reposo tras {n} min sin uso" if n else "😴 Reposo automático desactivado"
+            responder({"ok": e["reposo"] is not None, "cmd": "reposo", **e,
+                       "msg": msg if e["reposo"] is not None else "El servicio de reposo no responde"})
         elif txt in ("gestos_on", "gestos_off"):
             como_admin("rm" if txt == "gestos_on" else "touch", "-f" if txt == "gestos_on" else "--", GESTOS_OFF)
             on = gestos_activo()

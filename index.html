@@ -116,6 +116,19 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
   </div>
 
   <div class="card">
+    <div class="estado-con">😴 Reposo: <span id="repEstado" style="font-weight:600">—</span></div>
+    <div style="height:10px"></div>
+    <button id="bReposo" class="sec" disabled>😴 Poner en reposo ahora</button>
+    <div style="height:12px"></div>
+    <label class="opc">Reposo automático tras
+      <select id="sReposo" disabled style="font:inherit;padding:6px 8px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg)">
+        <option value="0">nunca</option><option value="5">5 min</option><option value="10">10 min</option>
+        <option value="15">15 min</option><option value="30">30 min</option><option value="60">60 min</option>
+      </select> sin uso</label>
+    <p class="sub" style="text-align:left;margin:8px 0 0;font-size:.85rem">En reposo la pantalla se queda en negro y la cámara se para (se enfría y gasta menos). Se despierta tocando la pantalla, con un mando o con "Hacer foto".</p>
+  </div>
+
+  <div class="card">
     <div class="estado-con">🖨 Impresora: <span id="impEstado" style="font-weight:600">—</span></div>
     <div style="height:10px"></div>
     <button id="bImprimir" disabled>🖨 Imprimir última foto</button>
@@ -154,7 +167,7 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
 const SVC="a07498ca-ad5b-474e-940d-16f1fbe7e8cd", CMD="a07498ca-ad5b-474e-940d-16f1fbe7e8ce", RESP="a07498ca-ad5b-474e-940d-16f1fbe7e8cf", DATA="a07498ca-ad5b-474e-940d-16f1fbe7e8d0";
 let dev=null, cmdChar=null;
 const $=id=>document.getElementById(id);
-const botones=["bFoto","bEstado","bReiniciar","bApagar","bImprimir","cAuto","bWifi","cInvitados","bGaleria","cGestos"];
+const botones=["bFoto","bEstado","bReiniciar","bApagar","bImprimir","cAuto","bWifi","cInvitados","bGaleria","cGestos","bReposo","sReposo"];
 let listaMarcos=[], marcoActual=null, modoActual="foto";
 const TXT_DISPARO={foto:"📷 Hacer foto",tira:"🎞 Hacer tira de 4 fotos",boomerang:"🔁 Hacer boomerang"};
 const log=t=>$("log").textContent=t;
@@ -211,6 +224,12 @@ function respuesta(txt){
     $("cAuto").checked=!!d.auto_print;
     if("invitados" in d) $("cInvitados").checked=!!d.invitados;
   }
+  if("reposo" in d){
+    reposo=d.reposo;
+    $("repEstado").textContent=d.reposo===null?"no disponible":d.reposo?"💤 en reposo":"☀️ despierto";
+    $("bReposo").textContent=d.reposo?"☀️ Despertar":"😴 Poner en reposo ahora";
+    if(d.reposo_min!=null){ const o=[...$("sReposo").options].some(x=>+x.value===d.reposo_min); if(!o) $("sReposo").add(new Option(d.reposo_min+" min",d.reposo_min)); $("sReposo").value=String(d.reposo_min); }
+  }
   if("gestos" in d){ $("cGestos").checked=!!d.gestos; $("cGestos").parentElement.style.opacity=d.gestos===null?.5:1; }
   if("hotspot" in d){
     hotspot=!!d.hotspot;
@@ -262,6 +281,9 @@ $("bEstado").onclick=()=>enviar("estado");
 $("bImprimir").onclick=()=>{$("bImprimir").disabled=true;log("🖨 Enviando a la impresora…");enviar("imprimir");setTimeout(()=>{if(dev?.gatt?.connected)$("bImprimir").disabled=false},5000)};
 let hotspot=false;
 $("bWifi").onclick=()=>{$("bWifi").disabled=true;log(hotspot?"Apagando la Wi-Fi de la fiesta…":"Encendiendo la Wi-Fi de la fiesta…");enviar(hotspot?"wifi_fiesta_off":"wifi_fiesta_on");setTimeout(()=>{if(dev?.gatt?.connected)$("bWifi").disabled=false},6000)};
+let reposo=false;
+$("bReposo").onclick=()=>enviar(reposo?"despertar":"dormir");
+$("sReposo").onchange=()=>enviar("reposo "+$("sReposo").value);
 $("cGestos").onchange=()=>enviar($("cGestos").checked?"gestos_on":"gestos_off");
 $("cInvitados").onchange=()=>enviar($("cInvitados").checked?"invitados_on":"invitados_off");
 $("cAuto").onchange=()=>enviar($("cAuto").checked?"auto_on":"auto_off");

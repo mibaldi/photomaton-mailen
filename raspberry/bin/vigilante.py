@@ -22,6 +22,7 @@ FALLOS_APP = 4         # ~40 s sin responder
 FALLOS_CAMARA = 6      # ~60 s sin imagen
 FALLOS_PAGINA = 4      # ~40 s con la página colgada
 ARRANQUE = 120         # s de gracia tras arrancar la Pi o reiniciar algo
+REPOSO = os.path.expanduser("~/.config/photomaton-reposo")   # reposo.py: pantalla negra y cámara parada
 
 
 def log(msg):
@@ -125,6 +126,10 @@ def main():
     while True:
         time.sleep(CADA)
         if time.time() < gracia:
+            continue
+        if os.path.exists(REPOSO):
+            f_app = f_cam = f_pag = 0
+            gracia = time.time() + 30        # al despertar, la cámara tarda unos segundos
             continue
 
         # 1) photobooth-app y cámara

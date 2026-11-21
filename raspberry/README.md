@@ -23,7 +23,8 @@ Todos los ficheros mencionados están en esta carpeta (`raspberry/`). Los de imp
 15. [Que se arregle solo (vigilante)](#15-que-se-arregle-solo)
 16. [Pase de fotos en una tele](#16-pase-de-fotos-en-una-tele)
 17. [Foto enseñando la palma de la mano](#17-foto-enseñando-la-palma-de-la-mano)
-18. [Comprobaciones y problemas conocidos](#15-comprobaciones-y-problemas-conocidos)
+18. [Reposo cuando no se usa](#18-reposo-cuando-no-se-usa)
+19. [Comprobaciones y problemas conocidos](#15-comprobaciones-y-problemas-conocidos)
 
 En esta guía el usuario de la Pi se llama `admin`. Si usas otro, cambia `/home/admin` y `admin` en los ficheros.
 
@@ -413,7 +414,20 @@ cp gestos/gestos.py ~/gestos/ && cp systemd/user/gestos.service ~/.config/system
 systemctl --user daemon-reload && systemctl --user enable --now gestos
 ```
 
-## 18. Comprobaciones y problemas conocidos
+## 18. Reposo cuando no se usa
+
+La Pi 5 no tiene suspensión real y la luz de la MHS35 no se puede apagar, así que el "reposo" pone la pantalla en **negro** ("😴 Toca la pantalla para hacerte una foto") y **deja de mirar la cámara**: photobooth-app solo saca imagen si alguien la mira, así que la CPU baja casi a cero y la Pi se enfría (medido: de ~85 °C a ~74 °C).
+
+- Entra solo tras **10 min sin uso** (configurable en la webapp: nunca / 5 / 10 / 15 / 30 / 60 min). Cuenta como uso: tocar la pantalla, una foto nueva, los mandos y cambiar marco o modo.
+- Se despierta en 2-3 s **tocando la pantalla**, con un **mando** (el primer pulsado solo despierta) o desde la **webapp** ("☀️ Despertar", o "Hacer foto": despierta, espera 4 s a que la cámara coja luz y dispara). Con la palma no, porque en reposo la cámara está parada.
+- `reposo/reposo.py` (servicio de usuario `reposo`, 127.0.0.1:8012, Python de photobooth-app) cambia la página del quiosco por el puerto de depuración de Chromium. Mientras duerme existe `~/.config/photomaton-reposo`, que respetan el vigilante y `gestos.py`. Minutos en `~/.config/photomaton-reposo-min`. Órdenes BLE: `dormir`, `despertar`, `reposo <min>`. Registro en `~/photobooth-data/log/reposo.log`.
+
+```bash
+install -m 755 reposo/reposo.py ~/bin/reposo.py
+cp systemd/user/reposo.service ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now reposo
+```
+
+## 19. Comprobaciones y problemas conocidos
 
 ```bash
 systemctl --user is-active photobooth-app mandos-foto photomaton-bot photobooth-drive.timer

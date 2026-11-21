@@ -112,6 +112,14 @@
   }
   setInterval(sincronizarGesto, 300);
 
+  // Tocar la pantalla cuenta como uso para el reposo (reposo.py, 127.0.0.1:8012)
+  let tActividad = 0;
+  addEventListener("pointerdown", () => {
+    if (Date.now() - tActividad < 5000) return;
+    tActividad = Date.now();
+    fetch("http://127.0.0.1:8012/actividad", { method: "POST" }).catch(() => {});
+  }, true);
+
   async function sincronizar() {
     try { aplicar(await llamar("/estado", "GET")); } catch {}
   }

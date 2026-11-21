@@ -24,6 +24,7 @@ STREAM = "http://127.0.0.1:8000/api/aquisition/stream.mjpg"
 MARCOS = "http://127.0.0.1:8010"
 MODELO = os.path.expanduser("~/gestos/gesture_recognizer.task")
 APAGADO = os.path.expanduser("~/.config/photomaton-gestos-off")
+REPOSO = os.path.expanduser("~/.config/photomaton-reposo")
 LOG = os.path.expanduser("~/photobooth-data/log/gestos.log")
 PUERTO = 8011
 
@@ -45,6 +46,11 @@ def log(msg):
 
 def activo():
     return not os.path.exists(APAGADO)
+
+
+def mirar():
+    """Solo se lee la cámara si está activado y el photomatón no está en reposo."""
+    return activo() and not os.path.exists(REPOSO)
 
 
 def marcos(ruta, metodo="GET"):
@@ -81,12 +87,15 @@ def fotogramas():
     sin copiarlas (el stream va a ~7 MB/s). Se reconecta si se corta (p. ej. al reiniciarse la app)."""
     SEP = b"--frame"
     while True:
+        while not mirar():
+            estado["activo"] = activo(); estado["progreso"] = 0.0
+            time.sleep(1)
         try:
             with urllib.request.urlopen(STREAM, timeout=10) as r:
                 buf, desde, ultimo = bytearray(), 0, 0.0
                 while True:
                     trozo = r.read1(262144)
-                    if not trozo:
+                    if not trozo or not mirar():
                         break
                     buf += trozo
                     while True:
