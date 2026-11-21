@@ -66,8 +66,21 @@ def elegir(i):
     os.replace(ESTADO + ".tmp", ESTADO)
 
 
+def copia_usb():
+    """Aviso de la copia al pendrive (copia-usb.sh) mientras dura y 20 s después."""
+    try:
+        with open("/run/photomaton-copia.json") as f:
+            c = json.load(f)
+        import time
+        if c.get("estado") == "copiando" or time.time() - c.get("ts", 0) < 20:
+            return c
+    except Exception:
+        pass
+    return None
+
+
 def estado():
-    return {"actual": actual(), "modo": modo(), "modos": MODOS, "marcos": marcos()}
+    return {"actual": actual(), "modo": modo(), "modos": MODOS, "marcos": marcos(), "copia": copia_usb()}
 
 
 class H(BaseHTTPRequestHandler):

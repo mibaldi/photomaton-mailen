@@ -92,8 +92,35 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
   </div>
 
   <button id="bConectar">🔗 Conectar al photomatón</button>
+  <div id="cardPin" class="card oculto">
+    <div class="estado-con">🔒 PIN del photomatón</div>
+    <div style="height:10px"></div>
+    <div style="display:flex;gap:8px">
+      <input id="iPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" placeholder="PIN"
+        style="flex:1;min-width:0;font:inherit;font-size:1.3rem;padding:10px 12px;border-radius:12px;border:2px solid var(--line);background:var(--card);color:var(--fg);letter-spacing:.3em">
+      <button id="bPin" style="width:auto;padding:0 22px;margin:0">Entrar</button>
+    </div>
+    <p id="pinMsg" class="sub" style="text-align:left;margin:8px 0 0;font-size:.88rem">Solo quien sepa el PIN puede manejar el photomatón desde el móvil.</p>
+  </div>
   <button id="bFoto" class="foto" disabled>📷 Hacer foto</button>
   <div id="log"></div>
+
+  <div class="card">
+    <div class="estado-con">🎉 Modo fiesta</div>
+    <div style="height:10px"></div>
+    <button id="bComprobar" class="sec" disabled>🔍 Comprobar que todo está listo</button>
+    <div id="checks" style="margin-top:10px;font-size:.95rem;line-height:1.45"></div>
+    <div style="height:10px"></div>
+    <button id="bFiesta" disabled>🎉 Preparar para la fiesta</button>
+    <p class="sub" style="text-align:left;margin:8px 0 0;font-size:.85rem">Despierta el photomatón, activa la palma, pone el reposo a 2 min si estaba en "nunca" y enciende la Wi-Fi de la fiesta (la Pi deja la Wi-Fi de casa).</p>
+    <details style="margin-top:12px"><summary style="cursor:pointer;font-weight:600">🔒 Cambiar el PIN</summary>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <input id="iPinNuevo" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" placeholder="PIN nuevo (4-8 cifras)"
+          style="flex:1;min-width:0;font:inherit;padding:10px 12px;border-radius:12px;border:2px solid var(--line);background:var(--card);color:var(--fg)">
+        <button id="bPinNuevo" class="sec" style="width:auto;padding:0 16px;margin:0" disabled>Cambiar</button>
+      </div>
+    </details>
+  </div>
 
   <div class="card">
     <div class="estado-con">✨ Modo</div>
@@ -167,7 +194,7 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
 const SVC="a07498ca-ad5b-474e-940d-16f1fbe7e8cd", CMD="a07498ca-ad5b-474e-940d-16f1fbe7e8ce", RESP="a07498ca-ad5b-474e-940d-16f1fbe7e8cf", DATA="a07498ca-ad5b-474e-940d-16f1fbe7e8d0";
 let dev=null, cmdChar=null;
 const $=id=>document.getElementById(id);
-const botones=["bFoto","bEstado","bReiniciar","bApagar","bImprimir","cAuto","bWifi","cInvitados","bGaleria","cGestos","bReposo","sReposo"];
+const botones=["bFoto","bEstado","bReiniciar","bApagar","bImprimir","cAuto","bWifi","cInvitados","bGaleria","cGestos","bReposo","sReposo","bComprobar","bFiesta","bPinNuevo"];
 let listaMarcos=[], marcoActual=null, modoActual="foto";
 const TXT_DISPARO={foto:"📷 Hacer foto",tira:"🎞 Hacer tira de 4 fotos",boomerang:"🔁 Hacer boomerang"};
 const log=t=>$("log").textContent=t;
@@ -208,6 +235,8 @@ async function conectar(){
     // servidor Bluetooth): se corta para que al volver a conectar se haga limpia
     const t0=Date.now();
     setTimeout(()=>{ if(dev?.gatt?.connected && ultimaRespuesta<t0){ log("⚠️ El photomatón no responde. Vuelve a pulsar Conectar."); dev.gatt.disconnect(); } },7000);
+    let pin=""; try{pin=localStorage.getItem("pin")||""}catch{}
+    if(pin) await enviar("pin "+pin);
     enviar("estado");
   }catch(e){log("No se pudo conectar: "+e.message);conectadoUI(false)}
 }
@@ -221,6 +250,19 @@ function respuesta(txt){
   ultimaRespuesta=Date.now();
   let d; try{d=JSON.parse(txt)}catch{log(txt);return}
   if(d.cmd==="click"){efectoFoto();return}
+  if(d.cmd==="pin"){
+    if(d.ok){ $("cardPin").classList.add("oculto"); try{localStorage.setItem("pin",pinProbado||localStorage.getItem("pin")||"")}catch{} log(d.msg); if(pinProbado){pinProbado="";enviar("estado")} }
+    else{ $("cardPin").classList.remove("oculto"); $("pinMsg").textContent=d.msg; if(pinProbado){try{localStorage.removeItem("pin")}catch{}} pinProbado=""; $("iPin").focus(); }
+    return;
+  }
+  if(d.cmd==="pin_cambiado"){ if(d.ok){try{localStorage.setItem("pin",d.pin)}catch{} $("iPinNuevo").value="";} log((d.ok?"":"⚠️ ")+d.msg); return; }
+  if(d.cmd==="check"){
+    if(d.i===0) $("checks").innerHTML="";
+    const ico={ok:"✅",aviso:"⚠️",mal:"❌",info:"ℹ️"}[d.nivel]||"•";
+    const fila=document.createElement("div"); fila.textContent=ico+" "+d.txt; if(d.nivel==="mal") fila.style.fontWeight="700";
+    $("checks").appendChild(fila); return;
+  }
+  if(d.cmd==="check_fin"){ const f=document.createElement("div"); f.style.cssText="margin-top:6px;font-weight:700"; f.textContent=d.msg; $("checks").appendChild(f); $("bComprobar").disabled=false; return; }
   if(d.cmd==="datos"){cabeceraDatos(d);return}
   if("marco" in d && d.marco!==null) pintarMarcos(d.marco);
   if(d.modo) pintarModo(d.modo);
@@ -287,7 +329,13 @@ $("bEstado").onclick=()=>enviar("estado");
 $("bImprimir").onclick=()=>{$("bImprimir").disabled=true;log("🖨 Enviando a la impresora…");enviar("imprimir");setTimeout(()=>{if(dev?.gatt?.connected)$("bImprimir").disabled=false},5000)};
 let hotspot=false;
 $("bWifi").onclick=()=>{$("bWifi").disabled=true;log(hotspot?"Apagando la Wi-Fi de la fiesta…":"Encendiendo la Wi-Fi de la fiesta…");enviar(hotspot?"wifi_fiesta_off":"wifi_fiesta_on");setTimeout(()=>{if(dev?.gatt?.connected)$("bWifi").disabled=false},6000)};
-let reposo=false;
+let reposo=false, pinProbado="";
+function probarPin(){ const p=$("iPin").value.trim(); if(!/^\d{4,8}$/.test(p)){$("pinMsg").textContent="El PIN tiene de 4 a 8 cifras";return} pinProbado=p; $("iPin").value=""; enviar("pin "+p); }
+$("bPin").onclick=probarPin;
+$("iPin").addEventListener("keydown",e=>{if(e.key==="Enter")probarPin()});
+$("bComprobar").onclick=()=>{ $("bComprobar").disabled=true; $("checks").textContent="Comprobando… (unos segundos)"; enviar("comprobar"); setTimeout(()=>{$("bComprobar").disabled=!(dev?.gatt?.connected)},20000); };
+$("bFiesta").onclick=()=>enviar("fiesta");
+$("bPinNuevo").onclick=()=>{ const p=$("iPinNuevo").value.trim(); if(!/^\d{4,8}$/.test(p)){log("⚠️ El PIN nuevo debe tener de 4 a 8 cifras");return} enviar("cambiar_pin "+p); };
 $("bReposo").onclick=()=>enviar(reposo?"despertar":"dormir");
 $("sReposo").onchange=()=>enviar("reposo "+$("sReposo").value);
 $("cGestos").onchange=()=>enviar($("cGestos").checked?"gestos_on":"gestos_off");

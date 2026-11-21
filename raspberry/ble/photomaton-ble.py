@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Servidor BLE (GATT) del photomatón: recibe órdenes de texto desde la webapp (Web Bluetooth).
-Órdenes: foto | estado | imprimir | auto_on | auto_off | invitados_on | invitados_off | gestos_on | gestos_off | dormir | despertar | reposo <min> | wifi_fiesta_on | wifi_fiesta_off |
+Órdenes: foto | estado | imprimir | auto_on | auto_off | invitados_on | invitados_off | gestos_on | gestos_off | dormir | despertar | reposo <min> | comprobar | fiesta | pin <n> | cambiar_pin <n> | wifi_fiesta_on | wifi_fiesta_off |
 apagar | reiniciar | ping.
 Marcos y modos: marco <n> | marco_sig | marco_ant | modo <foto|tira|boomerang> (los guarda marcos-servicio, 127.0.0.1:8010).
 Galería por BLE: lista | mini <foto> | ver <foto> | trozos <tipo> <foto> <n,n,…> | imprimir <foto>.
@@ -56,6 +56,7 @@ def estado():
         "hotspot": wifi_fiesta(),
         "gestos": gestos_activo(),
         **reposo_api("/estado", "GET"),
+        "copia": (estado_copia() or {}).get("msg"),
         **marco_y_modo(),
         **estado_impresora(),
     }
@@ -161,6 +162,7 @@ def marco_y_modo():
         return {"marco": None, "modo": None}
 
 
+PIN_FICHERO = "/etc/photomaton-pin"     # PIN de la webapp (4-8 cifras, root 600; si no existe, sin PIN)
 REPOSO = "http://127.0.0.1:8012"
 REPOSO_FLAG = "/home/admin/.config/photomaton-reposo"
 
@@ -186,6 +188,108 @@ def gestos_activo():
             return bool(json.load(r).get("activo"))
     except Exception:
         return None
+
+
+COPIA_ESTADO = "/run/photomaton-copia.json"   # lo escribe copia-usb.sh
+
+
+def estado_copia():
+    try:
+        with open(COPIA_ESTADO) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def http_ok(url, t=3):
+    try:
+        urllib.request.urlopen(url, timeout=t).read(1)
+        return True
+    except Exception:
+        return False
+
+
+def camara_da_imagen():
+    try:
+        with urllib.request.urlopen(APP + "/api/aquisition/stream.mjpg", timeout=6) as r:
+            datos, fin = b"", time.time() + 6
+            while time.time() < fin and len(datos) < 200000:
+                datos += r.read(8192)
+                if b"\xff\xd8" in datos and len(datos) > 20000:
+                    return True
+    except Exception:
+        pass
+    return False
+
+
+def comprobaciones():
+    """Lista de (nivel, texto) para la tarjeta "Modo fiesta": nivel ok | aviso | mal | info."""
+    c = []
+    app = http_ok(APP + "/")
+    c.append(("ok" if app else "mal", "App del photomatón " + ("funcionando" if app else "NO responde")))
+    usb = glob.glob("/dev/v4l/by-id/*C920*")
+    if not usb:
+        c.append(("mal", "Cámara C920 NO conectada"))
+    elif os.path.exists(REPOSO_FLAG):
+        c.append(("ok", "Cámara conectada (en reposo: se enciende al tocar la pantalla)"))
+    elif app:
+        img = camara_da_imagen()
+        c.append(("ok" if img else "mal", "Cámara " + ("da imagen" if img else "conectada pero SIN imagen")))
+    servicios = {"marcos": "http://127.0.0.1:8010/estado", "palma": GESTOS + "/estado",
+                 "reposo": REPOSO + "/estado", "panel Wi-Fi": "http://127.0.0.1/api/fotos"}
+    caidos = [n for n, u in servicios.items() if not http_ok(u)]
+    c.append(("ok" if not caidos else "aviso", "Servicios funcionando" if not caidos else "No responden: " + ", ".join(caidos)))
+    ei = estado_impresora()
+    conectada = "04a9:" in sh("lsusb")            # Canon
+    if not conectada:
+        c.append(("mal", "Impresora NO conectada por USB (o apagada)"))
+    else:
+        c.append(("ok" if ei["impresora"] in ("lista", "imprimiendo") else "aviso", f"Impresora {ei['impresora']}"))
+    c.append(("info", f"Impresas: {ei['impresas']}" + (f" de {ei['limite']}" if ei["limite"] else "")
+              + " · impresión automática " + ("SÍ" if ei["auto_print"] else "no")))
+    pareados = set(re.findall(r"Device (\S+)", sh("bluetoothctl devices Paired")))
+    conectados = set(re.findall(r"Device (\S+)", sh("bluetoothctl devices Connected")))
+    if pareados:
+        n = len(pareados & conectados)
+        c.append(("ok" if n == len(pareados) else "aviso", f"Mandos conectados: {n} de {len(pareados)}"
+                  + ("" if n == len(pareados) else " (pulsa un botón del mando para despertarlo)")))
+    try:
+        t = float(sh("vcgencmd measure_temp").split("=")[1].split("'")[0])
+        c.append(("ok" if t < 75 else "aviso" if t < 82 else "mal", f"Temperatura {t:.0f} °C"
+                  + ("" if t < 75 else " (pon ventilación o el ventilador)")))
+    except Exception:
+        pass
+    thr = sh("vcgencmd get_throttled").split("=")[-1]
+    try:
+        v = int(thr, 16)
+        if v & 0x1:
+            c.append(("mal", "Alimentación insuficiente AHORA (usa la fuente oficial de 27 W)"))
+        elif v & 0x10000:
+            c.append(("aviso", "Ha habido bajadas de alimentación desde que arrancó"))
+        else:
+            c.append(("ok", "Alimentación correcta"))
+    except ValueError:
+        pass
+    st = os.statvfs("/home/admin")
+    libre = st.f_bavail * st.f_frsize / 1e9
+    c.append(("ok" if libre > 3 else "aviso" if libre > 1 else "mal", f"Espacio libre: {libre:.0f} GB"))
+    c.append(("info", f"Fotos y boomerangs hechos: {n_fotos()}"))
+    g = gestos_activo()
+    r = reposo_api("/estado", "GET")
+    c.append(("info", "Palma: " + ("activada" if g else "desactivada" if g is False else "no disponible")
+              + " · reposo: " + (f"tras {r['reposo_min']} min" if r["reposo_min"] else "nunca" if r["reposo_min"] == 0 else "no disponible")))
+    creada = "wifi-fiesta" in sh("nmcli -t -f NAME con show").splitlines()
+    c.append(("ok" if wifi_fiesta() else "info" if creada else "aviso",
+              "Wi-Fi de la fiesta " + ("encendida (pase en http://10.42.0.1/pase)" if wifi_fiesta() else "creada, apagada" if creada else "NO creada")))
+    cp = estado_copia()
+    if cp:
+        c.append(("ok" if cp.get("estado") == "hecha" else "info", "Copia USB: " + cp.get("msg", "")))
+    else:
+        c.append(("info", "Copia USB: aún no se ha hecho ninguna (enchufa un pendrive al final)"))
+    ahora = time.localtime()
+    c.append(("ok" if ahora.tm_year >= 2026 else "mal", "Hora: " + time.strftime("%d/%m/%Y %H:%M", ahora)
+              + ("" if ahora.tm_year >= 2026 else " (MAL: las fotos saldrán con fecha errónea)")))
+    return c
 
 
 def como_admin(*args):
@@ -275,7 +379,7 @@ class Characteristic(dbus.service.Object):
     def WriteValue(self, value, options):
         if "mtu" in options:
             self.mtu = int(options["mtu"])
-        self.on_write(bytes(value).decode("utf-8", "ignore").strip().lower())
+        self.on_write(bytes(value).decode("utf-8", "ignore").strip().lower(), str(options.get("device", "")))
 
     @dbus.service.method("org.bluez.GattCharacteristic1")
     def StartNotify(self):
@@ -285,7 +389,7 @@ class Characteristic(dbus.service.Object):
     def StopNotify(self):
         self.notifying = False
 
-    def on_write(self, txt):
+    def on_write(self, txt, dispositivo=""):
         pass
 
     def notify(self, obj):
@@ -411,6 +515,29 @@ def main():
             como_admin("mkdir", "-p", IMPR_CFG)
             como_admin("rm" if txt == "invitados_on" else "touch", "-f" if txt == "invitados_on" else "--", os.path.join(IMPR_CFG, "invitados_no"))
             responder({"ok": True, "cmd": "invitados", "msg": "Los invitados " + ("pueden" if txt == "invitados_on" else "ya no pueden") + " imprimir desde el panel", **estado_impresora()})
+        elif txt == "comprobar":
+            lista = comprobaciones()
+            for i, (nivel, texto) in enumerate(lista):
+                responder({"cmd": "check", "i": i, "n": len(lista), "nivel": nivel, "txt": texto})
+                threading.Event().wait(0.05)
+            malos = sum(1 for n, _ in lista if n == "mal"); avisos = sum(1 for n, _ in lista if n == "aviso")
+            responder({"ok": malos == 0, "cmd": "check_fin", "msg": "✅ Todo listo para la fiesta" if not malos and not avisos
+                       else f"{'❌ ' + str(malos) + ' problema(s)' if malos else ''}{' · ' if malos and avisos else ''}{'⚠️ ' + str(avisos) + ' aviso(s)' if avisos else ''}"})
+        elif txt == "fiesta":
+            # deja todo como para la fiesta: despierto, palma activada, reposo a 2 min si estaba en "nunca",
+            # y la Wi-Fi propia encendida (la Pi deja la Wi-Fi de casa)
+            reposo_api("/despertar?fiesta")
+            como_admin("rm", "-f", GESTOS_OFF)
+            if reposo_api("/estado", "GET")["reposo_min"] == 0:
+                reposo_api("/minutos/2")
+            hecho = ["☀️ despierto", "✋ palma activada"]
+            if "wifi-fiesta" in sh("nmcli -t -f NAME con show").splitlines():
+                if not wifi_fiesta():
+                    sh("nmcli con up wifi-fiesta")
+                    threading.Event().wait(3)
+                hecho.append("📶 Wi-Fi de la fiesta " + ("encendida" if wifi_fiesta() else "NO se pudo encender"))
+            responder({"ok": True, "cmd": "fiesta", "msg": "🎉 Listo: " + ", ".join(hecho), "hotspot": wifi_fiesta(),
+                       "gestos": gestos_activo(), **reposo_api("/estado", "GET")})
         elif txt in ("dormir", "despertar") or re.fullmatch(r"reposo \d+", txt):
             if txt == "dormir":
                 e = reposo_api("/dormir"); msg = "😴 Photomatón en reposo: se despierta tocando la pantalla"
@@ -465,7 +592,56 @@ def main():
             traceback.print_exc()
             responder({"ok": False, "cmd": txt.split()[0] if txt else "", "msg": f"Error en el photomatón: {e}"})
 
-    cmd.on_write = lambda txt: threading.Thread(target=ejecutar_con_registro, args=(txt,), daemon=True).start()
+    # --- PIN: cada móvil tiene que mandar "pin NNNN" al conectarse; hasta entonces no se ejecuta nada.
+    # Se comprueba aquí, sin hilo, para que un "estado" enviado justo detrás del PIN ya esté autorizado.
+    autorizados, fallos = set(), {}
+
+    def leer_pin():
+        try:
+            return open(PIN_FICHERO).read().strip()
+        except OSError:
+            return ""
+
+    def al_escribir(txt, dispositivo):
+        pin = leer_pin()
+        if txt.startswith("pin "):
+            n, hasta = fallos.get(dispositivo, (0, 0))
+            if time.time() < hasta:
+                responder({"ok": False, "cmd": "pin", "necesita_pin": True, "msg": f"🔒 Demasiados intentos: espera {int(hasta - time.time()) + 1} s"})
+            elif not pin or txt[4:].strip() == pin:
+                autorizados.add(dispositivo); fallos.pop(dispositivo, None)
+                print("PIN correcto:", dispositivo, flush=True)
+                responder({"ok": True, "cmd": "pin", "msg": "🔓 PIN correcto"})
+            else:
+                n += 1
+                fallos[dispositivo] = (0, time.time() + 60) if n >= 5 else (n, 0)   # 5 fallos: 1 min bloqueado
+                print("PIN incorrecto:", dispositivo, flush=True)
+                responder({"ok": False, "cmd": "pin", "necesita_pin": True, "msg": "🔒 PIN incorrecto"})
+            return
+        if pin and dispositivo not in autorizados and txt != "ping":
+            responder({"ok": False, "cmd": "pin", "necesita_pin": True, "msg": "🔒 Introduce el PIN del photomatón"})
+            return
+        if txt.startswith("cambiar_pin "):
+            nuevo = txt.split(" ", 1)[1].strip()
+            if not re.fullmatch(r"\d{4,8}", nuevo):
+                responder({"ok": False, "cmd": "pin_cambiado", "msg": "El PIN debe tener de 4 a 8 cifras"})
+                return
+            fd = os.open(PIN_FICHERO, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                f.write(nuevo + "\n")
+            autorizados.clear(); autorizados.add(dispositivo)
+            responder({"ok": True, "cmd": "pin_cambiado", "pin": nuevo, "msg": "🔒 PIN cambiado"})
+            return
+        threading.Thread(target=ejecutar_con_registro, args=(txt,), daemon=True).start()
+
+    def al_cambiar_dispositivo(iface, cambios, invalidadas, path=None):
+        # al desconectarse un móvil, pierde la autorización (tendrá que mandar el PIN otra vez)
+        if iface == "org.bluez.Device1" and "Connected" in cambios and not cambios["Connected"]:
+            autorizados.discard(str(path))
+
+    bus.add_signal_receiver(al_cambiar_dispositivo, signal_name="PropertiesChanged", dbus_interface=PROPS,
+                            bus_name=BLUEZ, path_keyword="path")
+    cmd.on_write = al_escribir
 
     # Aviso de "foto en este instante": lo manda ~/bin/foto-efectos.sh (plugin commander) por UDP local.
     # La webapp lo recibe como notificación {"cmd":"click"} y hace sonido + flash en el móvil.

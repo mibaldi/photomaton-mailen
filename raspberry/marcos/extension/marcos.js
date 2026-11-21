@@ -14,6 +14,7 @@
   const nombre = el("div", "pm-nombre");
   const bModo = el("button", "pm-modo"), pista = el("div", "pm-pista");
   const mano = el("div", "pm-mano", "✋");
+  const copia = el("div", "pm-copia");
   [ant, sig, disparo, bModo].forEach(b => b.classList.add("pm-ctl"));
   // Al arrancar Chromium a veces ejecuta este script sin aplicar marcos.css (carrera del arranque):
   // si los estilos no están, los cargamos a mano
@@ -30,6 +31,9 @@
     return r.json();
   }
   function aplicar(nuevo, avisar) {
+    // aviso de la copia al pendrive (copia-usb.sh, vía marcos-servicio)
+    copia.textContent = nuevo.copia ? nuevo.copia.msg : "";
+    copia.className = nuevo.copia ? "on " + nuevo.copia.estado : "";
     const cambio = nuevo.actual !== est.actual || nuevo.marcos.length !== est.marcos.length;
     const cambioModo = nuevo.modo !== est.modo;
     est = nuevo;

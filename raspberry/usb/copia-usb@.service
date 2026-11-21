@@ -1,0 +1,7 @@
+[Unit]
+Description=Copia de las fotos del photomatón al pendrive %i
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/copia-usb.sh %i
+TimeoutStartSec=30min

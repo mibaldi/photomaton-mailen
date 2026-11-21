@@ -24,7 +24,8 @@ Todos los ficheros mencionados están en esta carpeta (`raspberry/`). Los de imp
 16. [Pase de fotos en una tele](#16-pase-de-fotos-en-una-tele)
 17. [Foto enseñando la palma de la mano](#17-foto-enseñando-la-palma-de-la-mano)
 18. [Reposo cuando no se usa](#18-reposo-cuando-no-se-usa)
-19. [Comprobaciones y problemas conocidos](#15-comprobaciones-y-problemas-conocidos)
+19. [PIN, copia al pendrive y modo fiesta](#19-pin-copia-al-pendrive-y-modo-fiesta)
+20. [Comprobaciones y problemas conocidos](#15-comprobaciones-y-problemas-conocidos)
 
 En esta guía el usuario de la Pi se llama `admin`. Si usas otro, cambia `/home/admin` y `admin` en los ficheros.
 
@@ -427,7 +428,27 @@ install -m 755 reposo/reposo.py ~/bin/reposo.py
 cp systemd/user/reposo.service ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now reposo
 ```
 
-## 19. Comprobaciones y problemas conocidos
+## 19. PIN, copia al pendrive y modo fiesta
+
+**PIN de la webapp.** Cualquiera con Chrome en Android podría conectarse al photomatón por Bluetooth, así que el servidor BLE no ejecuta ninguna orden hasta que el móvil manda `pin NNNN`. La webapp lo pide la primera vez y lo recuerda en el móvil. La autorización es por dispositivo y se pierde al desconectarse; 5 fallos seguidos bloquean 1 min. El PIN está en `/etc/photomaton-pin` (root, 600; si no existe, no se pide PIN) y se cambia desde la webapp (tarjeta Modo fiesta → Cambiar el PIN, orden `cambiar_pin NNNN`). Los mandos no usan PIN.
+
+```bash
+echo 1234 | sudo tee /etc/photomaton-pin && sudo chmod 600 /etc/photomaton-pin   # elige el tuyo
+```
+
+**Copia al pendrive.** Al enchufar un pendrive (FAT32, exFAT o ext4) se copian las fotos y boomerangs que falten a `Photomaton Mailen/` (sin las fotos de prueba ni las sueltas de las tiras), se desmonta y en la pantalla sale "✅ Copia hecha… ya puedes quitar el pendrive". No borra nada del pendrive; si lo vuelves a enchufar, solo copia las nuevas. Regla udev `usb/99-photomaton-usb.rules` → `copia-usb@<disco>.service` → `usb/copia-usb.sh`. Estado en `/run/photomaton-copia.json`, registro en `~/photobooth-data/log/copia-usb.log`.
+
+```bash
+sudo install -m 755 usb/copia-usb.sh /usr/local/bin/
+sudo cp usb/copia-usb@.service /etc/systemd/system/ && sudo cp usb/99-photomaton-usb.rules /etc/udev/rules.d/
+sudo systemctl daemon-reload && sudo udevadm control --reload-rules
+```
+
+**Modo fiesta** (tarjeta en la webapp):
+- **Comprobar que todo está listo** (orden `comprobar`): app, cámara (que dé imagen), servicios, impresora conectada y lista, impresas, mandos conectados, temperatura, alimentación, espacio libre, palma/reposo, Wi-Fi de la fiesta, última copia al pendrive y que la hora sea correcta. Cada línea sale con ✅ ⚠️ ❌ o ℹ️.
+- **Preparar para la fiesta** (orden `fiesta`): despierta, activa la palma, pone el reposo a 2 min si estaba en "nunca" y enciende la Wi-Fi de la fiesta.
+
+## 20. Comprobaciones y problemas conocidos
 
 ```bash
 systemctl --user is-active photobooth-app mandos-foto photomaton-bot photobooth-drive.timer

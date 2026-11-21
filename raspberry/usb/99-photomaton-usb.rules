@@ -1,0 +1,2 @@
+# Al enchufar un pendrive (cualquier sistema de ficheros) se copian las fotos del photomatón
+ACTION=="add", SUBSYSTEM=="block", KERNEL=="sd*", ENV{ID_FS_USAGE}=="filesystem", TAG+="systemd", ENV{SYSTEMD_WANTS}+="copia-usb@%k.service"
