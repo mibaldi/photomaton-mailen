@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Servidor BLE (GATT) del photomatón: recibe órdenes de texto desde la webapp (Web Bluetooth).
-Órdenes: foto | estado | imprimir | auto_on | auto_off | invitados_on | invitados_off | wifi_fiesta_on | wifi_fiesta_off |
+Órdenes: foto | estado | imprimir | auto_on | auto_off | invitados_on | invitados_off | gestos_on | gestos_off | wifi_fiesta_on | wifi_fiesta_off |
 apagar | reiniciar | ping.
 Marcos y modos: marco <n> | marco_sig | marco_ant | modo <foto|tira|boomerang> (los guarda marcos-servicio, 127.0.0.1:8010).
 Galería por BLE: lista | mini <foto> | ver <foto> | trozos <tipo> <foto> <n,n,…> | imprimir <foto>.
@@ -54,6 +54,7 @@ def estado():
         "wifi": sh("nmcli -t -f active,ssid dev wifi | grep ^yes | cut -d: -f2") or None,
         "internet": sh("ping -c1 -W2 8.8.8.8 >/dev/null 2>&1 && echo si") == "si",
         "hotspot": wifi_fiesta(),
+        "gestos": gestos_activo(),
         **marco_y_modo(),
         **estado_impresora(),
     }
@@ -157,6 +158,19 @@ def marco_y_modo():
         return {"marco": e["actual"], "modo": e["modo"]}
     except Exception:
         return {"marco": None, "modo": None}
+
+
+GESTOS = "http://127.0.0.1:8011"
+GESTOS_OFF = "/home/admin/.config/photomaton-gestos-off"
+
+
+def gestos_activo():
+    """None si el detector de la palma (gestos.py) no está instalado o no responde."""
+    try:
+        with urllib.request.urlopen(GESTOS + "/estado", timeout=2) as r:
+            return bool(json.load(r).get("activo"))
+    except Exception:
+        return None
 
 
 def como_admin(*args):
@@ -378,6 +392,11 @@ def main():
             como_admin("mkdir", "-p", IMPR_CFG)
             como_admin("rm" if txt == "invitados_on" else "touch", "-f" if txt == "invitados_on" else "--", os.path.join(IMPR_CFG, "invitados_no"))
             responder({"ok": True, "cmd": "invitados", "msg": "Los invitados " + ("pueden" if txt == "invitados_on" else "ya no pueden") + " imprimir desde el panel", **estado_impresora()})
+        elif txt in ("gestos_on", "gestos_off"):
+            como_admin("rm" if txt == "gestos_on" else "touch", "-f" if txt == "gestos_on" else "--", GESTOS_OFF)
+            on = gestos_activo()
+            responder({"ok": on is not None, "cmd": "gestos", "gestos": on,
+                       "msg": ("✋ Foto con la palma " + ("activada" if on else "desactivada")) if on is not None else "El detector de la palma no está funcionando"})
         elif txt in ("wifi_fiesta_on", "wifi_fiesta_off"):
             if "wifi-fiesta" not in sh("nmcli -t -f NAME con show").splitlines():
                 responder({"ok": False, "cmd": "wifi", "msg": "La Wi-Fi de la fiesta no está creada (raspberry/red/crear-wifi-fiesta.sh)", "hotspot": False})

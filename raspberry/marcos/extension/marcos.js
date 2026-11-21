@@ -13,6 +13,7 @@
   const ant = el("button", "pm-ant", "‹"), sig = el("button", "pm-sig", "›"), disparo = el("button", "pm-disparo", "📷");
   const nombre = el("div", "pm-nombre");
   const bModo = el("button", "pm-modo"), pista = el("div", "pm-pista");
+  const mano = el("div", "pm-mano", "✋");
   [ant, sig, disparo, bModo].forEach(b => b.classList.add("pm-ctl"));
   // Al arrancar Chromium a veces ejecuta este script sin aplicar marcos.css (carrera del arranque):
   // si los estilos no están, los cargamos a mano
@@ -90,9 +91,26 @@
     const ctl = ver && Date.now() > bloqueado;
     ant.style.display = sig.style.display = ctl && foto && est.marcos.length > 1 ? "flex" : "none";
     disparo.style.display = bModo.style.display = ctl ? "flex" : "none";
+    // ✋ foto con la palma (gestos.py): pista pequeña en la esquina; crece y se llena mientras la detecta
+    const pr = gesto.activo ? gesto.progreso : 0;
+    mano.style.display = ver && gesto.activo && (ctl || pr > 0) ? "flex" : "none";
+    mano.classList.toggle("on", pr > 0);
+    mano.style.setProperty("--p", Math.round(pr * 100));
     pista.textContent = PISTA[est.modo] || "";
     pista.style.display = ctl && !foto ? "block" : "none";
   }
+
+  // Estado del detector de la palma (gestos.py, 127.0.0.1:8011)
+  let gesto = { activo: false, progreso: 0, disparo: 0 };
+  async function sincronizarGesto() {
+    try {
+      const r = await (await fetch("http://127.0.0.1:8011/estado", { cache: "no-store" })).json();
+      if (gesto.disparo && r.disparo !== gesto.disparo) bloqueado = Date.now() + (BLOQUEO[est.modo] || 7000);
+      gesto = r;
+    } catch { gesto = { activo: false, progreso: 0, disparo: gesto.disparo }; }
+    colocar();
+  }
+  setInterval(sincronizarGesto, 300);
 
   async function sincronizar() {
     try { aplicar(await llamar("/estado", "GET")); } catch {}

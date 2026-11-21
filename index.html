@@ -105,6 +105,8 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
     <div style="height:14px"></div>
     <div class="estado-con">🖼 Marco de la foto: <span id="marcoNombre" style="font-weight:600">—</span></div>
     <div id="marcos"></div>
+    <div style="height:14px"></div>
+    <label class="opc"><input type="checkbox" id="cGestos" disabled> ✋ Hacer la foto enseñando la palma a la cámara</label>
   </div>
 
   <div class="card">
@@ -152,7 +154,7 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
 const SVC="a07498ca-ad5b-474e-940d-16f1fbe7e8cd", CMD="a07498ca-ad5b-474e-940d-16f1fbe7e8ce", RESP="a07498ca-ad5b-474e-940d-16f1fbe7e8cf", DATA="a07498ca-ad5b-474e-940d-16f1fbe7e8d0";
 let dev=null, cmdChar=null;
 const $=id=>document.getElementById(id);
-const botones=["bFoto","bEstado","bReiniciar","bApagar","bImprimir","cAuto","bWifi","cInvitados","bGaleria"];
+const botones=["bFoto","bEstado","bReiniciar","bApagar","bImprimir","cAuto","bWifi","cInvitados","bGaleria","cGestos"];
 let listaMarcos=[], marcoActual=null, modoActual="foto";
 const TXT_DISPARO={foto:"📷 Hacer foto",tira:"🎞 Hacer tira de 4 fotos",boomerang:"🔁 Hacer boomerang"};
 const log=t=>$("log").textContent=t;
@@ -209,6 +211,7 @@ function respuesta(txt){
     $("cAuto").checked=!!d.auto_print;
     if("invitados" in d) $("cInvitados").checked=!!d.invitados;
   }
+  if("gestos" in d){ $("cGestos").checked=!!d.gestos; $("cGestos").parentElement.style.opacity=d.gestos===null?.5:1; }
   if("hotspot" in d){
     hotspot=!!d.hotspot;
     $("wifiEstado").textContent=hotspot?"✅ Wi-Fi de la fiesta encendida":"apagado (Pi en la Wi-Fi de casa o sin red)";
@@ -259,6 +262,7 @@ $("bEstado").onclick=()=>enviar("estado");
 $("bImprimir").onclick=()=>{$("bImprimir").disabled=true;log("🖨 Enviando a la impresora…");enviar("imprimir");setTimeout(()=>{if(dev?.gatt?.connected)$("bImprimir").disabled=false},5000)};
 let hotspot=false;
 $("bWifi").onclick=()=>{$("bWifi").disabled=true;log(hotspot?"Apagando la Wi-Fi de la fiesta…":"Encendiendo la Wi-Fi de la fiesta…");enviar(hotspot?"wifi_fiesta_off":"wifi_fiesta_on");setTimeout(()=>{if(dev?.gatt?.connected)$("bWifi").disabled=false},6000)};
+$("cGestos").onchange=()=>enviar($("cGestos").checked?"gestos_on":"gestos_off");
 $("cInvitados").onchange=()=>enviar($("cInvitados").checked?"invitados_on":"invitados_off");
 $("cAuto").onchange=()=>enviar($("cAuto").checked?"auto_on":"auto_off");
 $("bReiniciar").onclick=()=>{if(confirm("¿Reiniciar el photomatón?"))enviar("reiniciar")};

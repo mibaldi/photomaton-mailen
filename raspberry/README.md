@@ -22,7 +22,8 @@ Todos los ficheros mencionados están en esta carpeta (`raspberry/`). Los de imp
 14. [Marcos y modos (foto, tira de 4, boomerang)](#14-marcos-y-modos)
 15. [Que se arregle solo (vigilante)](#15-que-se-arregle-solo)
 16. [Pase de fotos en una tele](#16-pase-de-fotos-en-una-tele)
-17. [Comprobaciones y problemas conocidos](#15-comprobaciones-y-problemas-conocidos)
+17. [Foto enseñando la palma de la mano](#17-foto-enseñando-la-palma-de-la-mano)
+18. [Comprobaciones y problemas conocidos](#15-comprobaciones-y-problemas-conocidos)
 
 En esta guía el usuario de la Pi se llama `admin`. Si usas otro, cambia `/home/admin` y `admin` en los ficheros.
 
@@ -396,7 +397,23 @@ La Pi no puede sacar el pase por su HDMI: con la pantalla MHS35 el HDMI está fo
 
 La Wi-Fi de la fiesta (`red/crear-wifi-fiesta.sh`) se enciende sola si al arrancar la Pi no encuentra ninguna Wi-Fi conocida, o a mano desde la webapp. En casa también funciona en `http://<ip-de-la-pi>/pase`.
 
-## 17. Comprobaciones y problemas conocidos
+## 17. Foto enseñando la palma de la mano
+
+Si alguien enseña la **palma abierta** a la cámara durante ~1 s, se hace la foto (o la tira o el boomerang, según el modo). En la pantalla sale un ✋ pequeño abajo a la derecha; mientras detecta la palma se hace grande en el centro y se va llenando, y al llenarse dispara.
+
+- `gestos/gestos.py` (servicio de usuario `gestos`) lee el stream MJPEG de photobooth-app (no abre la cámara), analiza ~3 imágenes por segundo con **MediaPipe Gesture Recognizer** (gesto `Open_Palm`, confianza ≥ 0,6, mano de al menos un 7 % del ancho de la imagen para ignorar a quien pasa por el fondo) y dispara con `marcos-servicio` (`POST /disparar`). Tras disparar espera 10 s (foto), 26 s (tira) o 18 s (boomerang).
+- Modelo local `~/gestos/gesture_recognizer.task`: funciona sin internet.
+- Se activa/desactiva desde la webapp (casilla "✋ Hacer la foto enseñando la palma", órdenes BLE `gestos_on` / `gestos_off`); el estado se guarda en `~/.config/photomaton-gestos-off`. Estado para la pantalla en `127.0.0.1:8011/estado`.
+- Consumo: ~30 % de un núcleo (sobre todo por recibir el stream, que va a ~7 MB/s). Registro en `~/photobooth-data/log/gestos.log`.
+
+```bash
+mkdir -p ~/gestos && python3 -m venv ~/gestos/venv && ~/gestos/venv/bin/pip install mediapipe
+curl -L -o ~/gestos/gesture_recognizer.task https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/latest/gesture_recognizer.task
+cp gestos/gestos.py ~/gestos/ && cp systemd/user/gestos.service ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now gestos
+```
+
+## 18. Comprobaciones y problemas conocidos
 
 ```bash
 systemctl --user is-active photobooth-app mandos-foto photomaton-bot photobooth-drive.timer

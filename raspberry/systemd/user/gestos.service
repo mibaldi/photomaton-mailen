@@ -1,0 +1,13 @@
+[Unit]
+Description=Foto con la palma de la mano (MediaPipe sobre la previsualización)
+After=photobooth-app.service marcos.service
+
+[Service]
+ExecStart=%h/gestos/venv/bin/python %h/gestos/gestos.py
+Restart=always
+RestartSec=5
+Nice=5
+Environment=GLOG_minloglevel=2 TF_CPP_MIN_LOG_LEVEL=2
+
+[Install]
+WantedBy=default.target
