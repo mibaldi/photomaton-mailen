@@ -39,6 +39,10 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
 #modos{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
 #modos button{padding:12px 4px;font-size:.95rem;background:var(--card);color:var(--fg);border:2px solid var(--line)}
 #modos button.sel{background:var(--pri);color:#fff;border-color:var(--pri)}
+#filtros{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+#filtros button{padding:12px 4px;font-size:.95rem;background:var(--card);color:var(--fg);border:2px solid var(--line)}
+#filtros button.sel{background:var(--pri);color:#fff;border-color:var(--pri)}
+#filtros.apagado{opacity:.35;pointer-events:none}
 #marcos.apagado{opacity:.35;pointer-events:none}
 #rejilla .video::before{content:"▶";position:absolute;right:6px;bottom:4px;color:#fff;font-size:1rem;text-shadow:0 1px 3px #000;z-index:1}
 #vVid{max-width:100%;max-height:100%;display:none}
@@ -132,6 +136,13 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
       <button data-m="boomerang" disabled>🔁 Boomerang</button>
     </div>
     <div style="height:14px"></div>
+    <div class="estado-con">🎨 Filtro</div>
+    <div id="filtros">
+      <button data-f="0" disabled>🎨 Normal</button>
+      <button data-f="1" disabled>⚫ Blanco y negro</button>
+      <button data-f="2" disabled>🟤 Vintage</button>
+    </div>
+    <div style="height:14px"></div>
     <div class="estado-con">🖼 Marco de la foto: <span id="marcoNombre" style="font-weight:600">—</span></div>
     <div id="marcos"></div>
     <div style="height:14px"></div>
@@ -183,6 +194,8 @@ dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
 
   <div class="card">
     <label class="opc"><input type="checkbox" id="cEfectos" checked> 🔊 Sonido y flash en este móvil al hacer cada foto</label>
+    <div style="height:10px"></div>
+    <label class="opc"><input type="checkbox" id="cVoz" checked> 🗣 Cuenta atrás con voz: "3, 2, 1… ¡patata!"</label>
     <p class="sub" style="text-align:left;margin-top:8px;font-size:.88rem">Deja esta página abierta y con la pantalla encendida; suena con el volumen del móvil.</p>
   </div>
 
@@ -197,7 +210,7 @@ const SVC="a07498ca-ad5b-474e-940d-16f1fbe7e8cd", CMD="a07498ca-ad5b-474e-940d-1
 let dev=null, cmdChar=null;
 const $=id=>document.getElementById(id);
 const botones=["bFoto","bEstado","bReiniciar","bApagar","bImprimir","cAuto","bWifi","cInvitados","bGaleria","cGestos","bReposo","sReposo","bComprobar","bFiesta","bPinNuevo"];
-let listaMarcos=[], marcoActual=null, modoActual="foto";
+let listaMarcos=[], marcoActual=null, modoActual="foto", filtroActual=0;
 const TXT_DISPARO={foto:"📷 Hacer foto",tira:"🎞 Hacer tira de 4 fotos",boomerang:"🔁 Hacer boomerang"};
 const log=t=>$("log").textContent=t;
 
@@ -210,6 +223,7 @@ function conectadoUI(on){
   if(typeof mantenerPantalla==="function") mantenerPantalla(on);
   if(typeof pintarMarcos==="function") pintarMarcos(marcoActual);
   if(typeof pintarModo==="function") pintarModo(modoActual);
+  if(typeof pintarFiltro==="function") pintarFiltro(filtroActual);
   $("bConectar").textContent=on?"🔌 Desconectar":"🔗 Conectar al photomatón";
 }
 
@@ -252,6 +266,7 @@ function respuesta(txt){
   ultimaRespuesta=Date.now();
   let d; try{d=JSON.parse(txt)}catch{log(txt);return}
   if(d.cmd==="click"){efectoFoto();return}
+  if(d.cmd==="cuenta"){cuentaVoz(d.seg);return}
   if(d.cmd==="pin"){
     if(d.ok){ $("cardPin").classList.add("oculto"); try{localStorage.setItem("pin",pinProbado||localStorage.getItem("pin")||"")}catch{} log(d.msg); if(pinProbado){pinProbado="";enviar("estado")} }
     else{ $("cardPin").classList.remove("oculto"); $("pinMsg").textContent=d.msg; if(pinProbado){try{localStorage.removeItem("pin")}catch{}} pinProbado=""; $("iPin").focus(); }
@@ -268,6 +283,7 @@ function respuesta(txt){
   if(d.cmd==="datos"){cabeceraDatos(d);return}
   if("marco" in d && d.marco!==null) pintarMarcos(d.marco);
   if(d.modo) pintarModo(d.modo);
+  if(typeof d.filtro==="number") pintarFiltro(d.filtro);
   if(d.cmd==="imprimir" && $("visor").classList.contains("on")) $("vTexto").textContent=d.msg;
   if("impresora" in d){
     $("impEstado").textContent=d.impresora+(d.impresas!==undefined?` · ${d.impresas}${d.limite?"/"+d.limite:""} impresas`:"");
@@ -303,12 +319,37 @@ try{$("cEfectos").checked=localStorage.getItem("efectos")!=="0"}catch{}
 $("cEfectos").onchange=()=>{try{localStorage.setItem("efectos",$("cEfectos").checked?"1":"0")}catch{} desbloquearAudio()};
 function desbloquearAudio(){
   try{ if(!actx) actx=new (window.AudioContext||window.webkitAudioContext)(); if(actx.state==="suspended") actx.resume(); }catch{}
+  cargarVoces();
 }
 function clic(t0,dur,vol,decay){
   const n=Math.floor(actx.sampleRate*dur), b=actx.createBuffer(1,n,actx.sampleRate), d=b.getChannelData(0);
   let prev=0; for(let i=0;i<n;i++){prev=.6*prev+.4*(Math.random()*2-1); d[i]=prev*Math.exp(-i/(actx.sampleRate*decay));}
   const src=actx.createBufferSource(), g=actx.createGain(); g.gain.value=vol;
   src.buffer=b; src.connect(g).connect(actx.destination); src.start(t0);
+}
+// --- Cuenta atrás con voz (aviso "cuenta" de la Pi al empezar la cuenta atrás de la pantalla) ---
+const voces={}; let cargandoVoces=false;
+try{$("cVoz").checked=localStorage.getItem("voz")!=="0"}catch{}
+$("cVoz").onchange=()=>{try{localStorage.setItem("voz",$("cVoz").checked?"1":"0")}catch{} desbloquearAudio()};
+async function cargarVoces(){
+  if(cargandoVoces||!actx) return; cargandoVoces=true;
+  for(const k of ["1","2","3","4","5","patata"]){
+    try{ voces[k]=await actx.decodeAudioData(await (await fetch("voz/"+k+".mp3")).arrayBuffer()); }catch{}
+  }
+  if(Object.keys(voces).length<6) cargandoVoces=false;   // sin red la primera vez: se reintenta
+}
+function decir(k,cuando){
+  const b=voces[k]; if(!b) return;
+  const src=actx.createBufferSource(), g=actx.createGain(); g.gain.value=1;
+  src.buffer=b; src.connect(g).connect(actx.destination); src.start(cuando);
+}
+function cuentaVoz(seg){
+  if(!$("cVoz").checked||!actx||!seg) return;
+  if(actx.state==="suspended") actx.resume();
+  const lat=.2, t0=actx.currentTime-lat;            // el aviso llega por Bluetooth con algo de retraso
+  const n=Math.min(5,Math.ceil(seg));
+  for(let k=n;k>=1;k--) decir(String(k),Math.max(actx.currentTime,t0+(seg-k)));
+  decir("patata",Math.max(actx.currentTime+.05,t0+seg-.4));   // justo antes de la foto, para que sonrían a tiempo
 }
 function efectoFoto(){
   if(!$("cEfectos").checked) return;
@@ -358,8 +399,14 @@ function pintarModo(m){
   modoActual=m;
   document.querySelectorAll("#modos button").forEach(b=>{b.classList.toggle("sel",b.dataset.m===m);b.disabled=!dev?.gatt?.connected});
   $("marcos").classList.toggle("apagado",m!=="foto");
+  $("filtros").classList.toggle("apagado",m==="boomerang");
   if(!$("bFoto").disabled||!dev?.gatt?.connected) $("bFoto").textContent=TXT_DISPARO[m]||TXT_DISPARO.foto;
 }
+function pintarFiltro(f){
+  filtroActual=f;
+  document.querySelectorAll("#filtros button").forEach(b=>{b.classList.toggle("sel",+b.dataset.f===f);b.disabled=!dev?.gatt?.connected});
+}
+$("filtros").onclick=e=>{const b=e.target.closest("button[data-f]");if(b){pintarFiltro(+b.dataset.f);enviar("filtro "+b.dataset.f)}};
 $("modos").onclick=e=>{const b=e.target.closest("button[data-m]");if(b){pintarModo(b.dataset.m);enviar("modo "+b.dataset.m)}};
 $("marcos").onclick=e=>{const b=e.target.closest("button[data-k]");if(b){pintarMarcos(+b.dataset.k);enviar("marco "+b.dataset.k)}};
 
@@ -505,7 +552,7 @@ $("vImprimir").onclick=()=>{
 };
 
 // Versión: sube VERSION y version.json a la vez al publicar cambios
-const VERSION=14;
+const VERSION=15;
 $("ver").textContent="v"+VERSION;
 async function comprobarVersion(){
   try{

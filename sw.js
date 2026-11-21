@@ -1,4 +1,4 @@
-const C="photomaton-v14", F=["./","index.html","manifest.json","icon.svg"];
+const C="photomaton-v15", F=["./","index.html","manifest.json","icon.svg","voz/1.mp3","voz/2.mp3","voz/3.mp3","voz/4.mp3","voz/5.mp3","voz/patata.mp3"];
 self.addEventListener("install",e=>{e.waitUntil(caches.open(C).then(c=>c.addAll(F)));self.skipWaiting()});
 self.addEventListener("activate",e=>e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener("fetch",e=>{

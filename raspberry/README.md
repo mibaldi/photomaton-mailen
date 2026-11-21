@@ -467,3 +467,16 @@ tail -f ~/photobooth-data/log/photobooth_*.log
 | `get_throttled` distinto de `0x0` | Poca corriente o mucha temperatura: ventilador y fuente oficial |
 | No imprime | `lpstat -p SELPHY`; si está pausada: `cupsenable SELPHY`. Papel y cartucho bien puestos |
 | No suena | La Pi 5 no tiene audio: altavoz USB/Bluetooth, o usa el sonido de la webapp |
+
+## 21. Filtros y cuenta atrás con voz
+
+**Filtros** (Normal, Blanco y negro, Vintage) para la foto y la tira de 4; el boomerang va sin filtro.
+
+- Se eligen en la webapp (tarjeta Modo → 🎨 Filtro, orden BLE `filtro <n>` / `filtro_sig`) o con el botón 🎨 de la esquina superior derecha de la pantalla.
+- La previsualización de la pantalla se ve con una aproximación CSS del filtro; la foto final lleva el filtro de photobooth-app (pilgram2: `inkwell` y `nashville`).
+- `ajustar_marcos.py` crea una acción por cada (filtro, marco): `image/<filtro × nº marcos + marco>` y `collage/<filtro>`. El filtro 0 es el normal, así que `image/N` sigue siendo el marco N. Si faltan esas acciones, `marcos-servicio.py` dispara sin filtro.
+- La cuenta atrás de la foto pasa a 3 s para que encaje la voz.
+
+**Cuenta atrás con voz**: el plugin commander, en el evento `counting`, ejecuta `foto-efectos.sh cuenta {mediaitem_type}`. El servidor BLE avisa al móvil (`{"cmd":"cuenta","seg":N}`, con la duración leída de `config.json`) y la webapp dice "3, 2, 1… ¡patata!" (audios en `voz/`, generados con la voz Mónica de macOS). Casilla "🗣 Cuenta atrás con voz" en la webapp.
+
+Instalación: copiar `marcos-servicio.py`, la extensión, `foto-efectos.sh` y `photomaton-ble.py`, parar photobooth-app, ejecutar `ajustar_marcos.py`, añadir la tarea `counting` a `plugin_commander.json` (ya está en `photobooth/plugin_commander.json`) y reiniciar photobooth-app, marcos, photomaton-ble y Chromium.

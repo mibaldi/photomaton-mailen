@@ -2,7 +2,8 @@
 """Servidor BLE (GATT) del photomatón: recibe órdenes de texto desde la webapp (Web Bluetooth).
 Órdenes: foto | estado | imprimir | auto_on | auto_off | invitados_on | invitados_off | gestos_on | gestos_off | dormir | despertar | reposo <min> | comprobar | fiesta | pin <n> | cambiar_pin <n> | wifi_fiesta_on | wifi_fiesta_off |
 apagar | reiniciar | ping.
-Marcos y modos: marco <n> | marco_sig | marco_ant | modo <foto|tira|boomerang> (los guarda marcos-servicio, 127.0.0.1:8010).
+Marcos y modos: marco <n> | marco_sig | marco_ant | modo <foto|tira|boomerang> | filtro <n> | filtro_sig
+  (los guarda marcos-servicio, 127.0.0.1:8010). Notifica {"cmd":"cuenta","seg":N} al empezar cada cuenta atrás.
 Galería por BLE: lista | mini <foto> | ver <foto> | trozos <tipo> <foto> <n,n,…> | imprimir <foto>.
   La cabecera {"cmd":"datos",tipo,id,tam,trozo,n} va por RESP y los bytes por la característica DATA,
   en trozos de [2 bytes de número de trozo][datos]. La webapp junta los trozos y pide los que falten. Responde por notificación en la característica RESP.
@@ -157,9 +158,29 @@ def marcos_api(ruta, metodo="POST"):
 def marco_y_modo():
     try:
         e = marcos_api("/estado", "GET")
-        return {"marco": e["actual"], "modo": e["modo"]}
+        return {"marco": e["actual"], "modo": e["modo"], "filtro": e.get("filtro", 0)}
     except Exception:
-        return {"marco": None, "modo": None}
+        return {"marco": None, "modo": None, "filtro": None}
+
+
+CONFIG_APP = os.path.expanduser("~admin/photobooth-data/config/config.json")
+_ultima_cuenta = {"tipo": "", "t": 0.0}
+
+
+def segundos_cuenta(tipo):
+    """Duración de la cuenta atrás que va a empezar (la de photobooth-app para ese tipo de foto)."""
+    try:
+        acc = json.load(open(CONFIG_APP))["actions"]
+        if tipo == "collage":
+            jc = acc["collage"][0]["jobcontrol"]
+            seguida = _ultima_cuenta["tipo"] == "collage" and time.time() - _ultima_cuenta["t"] < 15
+            seg = jc.get("countdown_capture_second_following", 1) if seguida else jc.get("countdown_capture", 2)
+        else:
+            seg = acc["video" if tipo == "video" else "image"][0].get("jobcontrol", {}).get("countdown_capture", 2)
+    except Exception:
+        seg = 3 if tipo in ("collage", "video") else 2
+    _ultima_cuenta.update(tipo=tipo, t=time.time())
+    return float(seg)
 
 
 PIN_FICHERO = "/etc/photomaton-pin"     # PIN de la webapp (4-8 cifras, root 600; si no existe, sin PIN)
@@ -576,6 +597,12 @@ def main():
                 responder({"ok": True, "cmd": "modo", "modo": e["modo"], "marco": e["actual"], "msg": "Modo: " + nombres[e["modo"]]})
             except Exception as ex:
                 responder({"ok": False, "cmd": "modo", "msg": f"No se pudo cambiar el modo: {ex}"})
+        elif txt == "filtro_sig" or re.fullmatch(r"filtro \d+", txt):
+            try:
+                e = marcos_api("/filtro_sig" if txt == "filtro_sig" else "/filtro/" + txt.split()[1])
+                responder({"ok": True, "cmd": "filtro", "filtro": e["filtro"], "msg": "🎨 Filtro: " + e["filtros"][e["filtro"]]["nombre"]})
+            except Exception as ex:
+                responder({"ok": False, "cmd": "filtro", "msg": f"No se pudo cambiar el filtro: {ex}"})
         elif txt == "ping":
             responder({"ok": True, "cmd": "ping", "msg": "pong"})
         else:
@@ -650,12 +677,19 @@ def main():
     udp.setblocking(False)
 
     def on_udp(src, cond):
+        # "click" (foto en este instante) o "cuenta <image|collage|video>" (empieza la cuenta atrás)
+        msgs = []
         try:
             while True:
-                udp.recv(64)
+                msgs.append(udp.recv(64).decode(errors="replace").strip())
         except BlockingIOError:
             pass
-        resp.notify({"ok": True, "cmd": "click"})
+        for m in msgs:
+            if m.startswith("cuenta"):
+                tipo = (m.split() + ["image"])[1]
+                resp.notify({"ok": True, "cmd": "cuenta", "seg": segundos_cuenta(tipo), "tipo": tipo})
+            else:
+                resp.notify({"ok": True, "cmd": "click"})
         return True
 
     GLib.io_add_watch(udp.fileno(), GLib.IO_IN, on_udp)

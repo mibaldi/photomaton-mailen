@@ -16,6 +16,18 @@
     },
     {
       "enabled": true,
+      "name": "cuenta atrás con voz (móvil)",
+      "event": [
+        "counting"
+      ],
+      "filter_mediaitem_types": [],
+      "delay_before": 0,
+      "wait_until_completed": false,
+      "timeout": 5,
+      "command": "/home/admin/bin/foto-efectos.sh cuenta {mediaitem_type}"
+    },
+    {
+      "enabled": true,
       "name": "imprimir automático",
       "event": [
         "finished"

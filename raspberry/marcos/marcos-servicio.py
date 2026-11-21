@@ -6,6 +6,7 @@ lleva el marco N de marcos.json. Este servicio guarda cuál está elegido y disp
   GET  /estado              {"actual": i, "modo": "foto", "modos": [...], "marcos": [{"clave","nombre","archivo"}]}
   POST /elegir/<i>  /siguiente  /anterior        marco (solo modo foto)
   POST /modo/<foto|tira|boomerang>  /modo_sig    modo
+  POST /filtro/<i>  /filtro_sig                 filtro de color (Normal, Blanco y negro, Vintage) para foto y tira
   POST /disparar            según el modo: foto con el marco elegido, tira de 4 o boomerang
                             (lo usan la pantalla, los mandos y el BLE)
   GET  /png/<archivo>       imagen del marco (para dibujarlo sobre la previsualización)"""
@@ -17,7 +18,13 @@ ESTADO = os.environ.get("MARCOS_ESTADO", "/home/admin/.config/photomaton-marco")
 APP = os.environ.get("MARCOS_APP", "http://localhost:8000")
 PUERTO = int(os.environ.get("MARCOS_PUERTO", "8010"))
 MODOS = ["foto", "tira", "boomerang"]
-ACCION = {"tira": "collage/0", "boomerang": "video/0"}
+# Filtros: photobooth-app tiene una acción por cada (filtro, marco): image/<f*nº marcos + marco> y collage/<f>.
+# Las crea ajustar_marcos.py con esta misma lista. "css" es la aproximación para la previsualización.
+FILTROS = [
+    {"nombre": "Normal", "id": "original", "css": ""},
+    {"nombre": "Blanco y negro", "id": "FilterPilgram2.inkwell", "css": "grayscale(1) contrast(1.1)"},
+    {"nombre": "Vintage", "id": "FilterPilgram2.nashville", "css": "sepia(.35) saturate(1.3) contrast(.92) brightness(1.06)"},
+]
 REPOSO = "http://127.0.0.1:8012"
 REPOSO_FLAG = os.path.expanduser("~/.config/photomaton-reposo")
 
@@ -66,6 +73,30 @@ def elegir(i):
     os.replace(ESTADO + ".tmp", ESTADO)
 
 
+def filtro():
+    try:
+        f = int(open(ESTADO + "-filtro").read().strip())
+    except Exception:
+        f = 0
+    return f if 0 <= f < len(FILTROS) else 0
+
+
+def poner_filtro(f):
+    with open(ESTADO + "-filtro.tmp", "w") as fh:
+        fh.write(str(f % len(FILTROS)))
+    os.replace(ESTADO + "-filtro.tmp", ESTADO + "-filtro")
+
+
+def accion():
+    """Acción de photobooth-app según modo, marco y filtro."""
+    m, i, f = modo(), actual(), filtro()
+    if m == "tira":
+        return f"collage/{f}"
+    if m == "boomerang":
+        return "video/0"
+    return f"image/{f * max(1, len(marcos())) + i}"
+
+
 def copia_usb():
     """Aviso de la copia al pendrive (copia-usb.sh) mientras dura y 20 s después."""
     try:
@@ -80,7 +111,8 @@ def copia_usb():
 
 
 def estado():
-    return {"actual": actual(), "modo": modo(), "modos": MODOS, "marcos": marcos(), "copia": copia_usb()}
+    return {"actual": actual(), "modo": modo(), "modos": MODOS, "marcos": marcos(), "copia": copia_usb(),
+            "filtro": filtro(), "filtros": FILTROS}
 
 
 class H(BaseHTTPRequestHandler):
@@ -128,16 +160,26 @@ class H(BaseHTTPRequestHandler):
             elegir(actual() - 1)
         elif re.fullmatch(r"/modo/(foto|tira|boomerang)", p):
             poner_modo(p.split("/")[2])
+        elif re.fullmatch(r"/filtro/\d+", p):
+            poner_filtro(int(p.split("/")[2]))
+        elif p == "/filtro_sig":
+            poner_filtro(filtro() + 1)
         elif p == "/modo_sig":
             poner_modo(MODOS[(MODOS.index(modo()) + 1) % len(MODOS)])
         elif p == "/disparar":
-            i, m = actual(), modo()
-            accion = ACCION.get(m, f"image/{i}")
+            i, m, a = actual(), modo(), accion()
             try:
-                urllib.request.urlopen(f"{APP}/api/actions/{accion}", timeout=10).read()
+                try:
+                    urllib.request.urlopen(f"{APP}/api/actions/{a}", timeout=10).read()
+                except urllib.error.HTTPError:
+                    if a.startswith("video"):
+                        raise
+                    # sin las acciones con filtro (falta ajustar_marcos.py): sin filtro
+                    a = f"image/{i}" if m == "foto" else "collage/0"
+                    urllib.request.urlopen(f"{APP}/api/actions/{a}", timeout=10).read()
             except Exception as e:
                 return self.resp(502, {"ok": False, "msg": str(e)})
-            return self.resp(200, {"ok": True, "modo": m, "marco": i})
+            return self.resp(200, {"ok": True, "modo": m, "marco": i, "filtro": filtro(), "accion": a})
         else:
             return self.resp(404, {"error": "no existe"})
         self.resp(200, estado())
