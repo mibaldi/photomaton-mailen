@@ -27,7 +27,7 @@ FLAG = os.path.expanduser("~/.config/photomaton-reposo")
 CFG = os.path.expanduser("~/.config/photomaton-reposo-min")
 MEDIA = os.path.expanduser("~/photobooth-data/media/processed_full")
 LOG = os.path.expanduser("~/photobooth-data/log/reposo.log")
-POR_DEFECTO = 10
+POR_DEFECTO = 2
 ARRANQUE = 180        # s tras arrancar sin dormirse
 
 ultima = time.time()
