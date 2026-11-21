@@ -46,8 +46,12 @@
     try { await llamar("/disparar"); } catch {}
   });
 
-  // La previsualización en directo: <img> con el stream MJPEG de photobooth-app
+  // La previsualización en directo: photobooth-app 9 la pinta en un <canvas> dentro de .canvas-stack
+  // (el otro canvas de la pila es el fondo difuminado); versiones antiguas usaban un <img> MJPEG
   function buscarStream() {
+    for (const c of document.querySelectorAll(".canvas-stack canvas")) {
+      if (c.width >= 320 && c.offsetWidth > 50 && c.offsetHeight > 50) return c;
+    }
     for (const i of document.querySelectorAll("img")) {
       if (/stream\.mjpg|aquisition/.test(i.src) && i.offsetWidth > 50 && i.offsetHeight > 50) return i;
     }
@@ -56,7 +60,8 @@
   function cajaContenido(img) {
     // rectángulo real de la imagen dentro del <img> (object-fit: contain / cover)
     const r = img.getBoundingClientRect(), fit = getComputedStyle(img).objectFit;
-    const nw = img.naturalWidth || 16, nh = img.naturalHeight || 9;
+    const lienzo = img.tagName === "CANVAS";
+    const nw = (lienzo ? img.width : img.naturalWidth) || 16, nh = (lienzo ? img.height : img.naturalHeight) || 9;
     if (fit !== "contain" && fit !== "cover") return r;
     const esc = (fit === "contain" ? Math.min : Math.max)(r.width / nw, r.height / nh);
     const w = nw * esc, h = nh * esc;
